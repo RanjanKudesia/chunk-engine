@@ -42,3 +42,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Internal working docs — kept local, never published.
+# Canonical tracker lives at the workspace root (../TECH_DEBT.md, ../CLAUDE.md).
+/AGENTS.md
+/BENCHMARK_HANDOFF.md
+/CLAUDE.md
+/KNOWN-ISSUES.md
+/NEEDS-REVIEW.md
+/PLAYGROUND.md
+/TECH_DEBT.md
