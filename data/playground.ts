@@ -69,6 +69,34 @@ export const playgroundExts: PlaygroundExt[] = [
     sample: "/playground/iris.csv",
     sampleName: "iris.csv",
   },
+  {
+    ext: "json",
+    label: "JSON",
+    enabled: true,
+    sample: "/playground/orders.json",
+    sampleName: "orders.json",
+  },
+  {
+    ext: "eml",
+    label: "EML",
+    enabled: true,
+    sample: "/playground/message.eml",
+    sampleName: "message.eml",
+  },
+  {
+    ext: "msg",
+    label: "MSG",
+    enabled: true,
+    sample: "/playground/message.msg",
+    sampleName: "message.msg",
+  },
+  {
+    ext: "epub",
+    label: "EPUB",
+    enabled: true,
+    sample: "/playground/book.epub",
+    sampleName: "book.epub",
+  },
 ];
 
 export type Method = "chunks" | "stream" | "markdown";

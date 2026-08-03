@@ -1,0 +1,27 @@
+From: Ada Lovelace <ada@analyticalengine.org>
+To: Charles Babbage <charles@analyticalengine.org>
+Subject: Notes on the Analytical Engine
+Date: Mon, 4 Aug 2026 09:30:00 +0000
+Message-ID: <a1042@analyticalengine.org>
+Content-Type: text/plain; charset=utf-8
+
+Dear Charles,
+
+I have finished reviewing the plans for the Analytical Engine, and I am
+convinced it can do far more than calculate tables. With the right sequence of
+operations on the punched cards, the machine could manipulate symbols of any
+kind — not merely numbers.
+
+A few points I would like to discuss when we next meet:
+
+- The engine might one day compose elaborate pieces of music, if we can encode
+  the rules of harmony as operations.
+- We should document the operation cards carefully so others can reproduce a
+  computation without re-deriving it.
+- I have drafted a short program to compute Bernoulli numbers; I will bring it.
+
+It is the analysis of the process, not the mechanism itself, that will prove
+most enduring.
+
+Yours in anticipation,
+Ada

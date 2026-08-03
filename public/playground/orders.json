@@ -1,0 +1,35 @@
+[
+  {
+    "order_id": "A-1042",
+    "customer": "Ada Lovelace",
+    "status": "shipped",
+    "total": 128.5,
+    "items": [
+      { "sku": "KBD-01", "name": "Mechanical keyboard", "qty": 1 },
+      { "sku": "CBL-22", "name": "USB-C cable", "qty": 2 }
+    ],
+    "shipping": { "city": "London", "country": "UK", "expedited": true }
+  },
+  {
+    "order_id": "A-1043",
+    "customer": "Grace Hopper",
+    "status": "processing",
+    "total": 54.0,
+    "items": [
+      { "sku": "MSE-07", "name": "Wireless mouse", "qty": 1 }
+    ],
+    "shipping": { "city": "Arlington", "country": "US", "expedited": false }
+  },
+  {
+    "order_id": "A-1044",
+    "customer": "Linus Torvalds",
+    "status": "delivered",
+    "total": 312.75,
+    "items": [
+      { "sku": "MON-14", "name": "27-inch monitor", "qty": 1 },
+      { "sku": "STD-03", "name": "Monitor stand", "qty": 1 },
+      { "sku": "CBL-22", "name": "USB-C cable", "qty": 3 }
+    ],
+    "shipping": { "city": "Portland", "country": "US", "expedited": true }
+  }
+]

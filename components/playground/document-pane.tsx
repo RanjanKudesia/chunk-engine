@@ -96,8 +96,12 @@ function renderedClassFor(ext: string): string {
       return "pptx-host p-3";
     case "md":
     case "csv":
+    case "msg":
+    case "epub":
       return "playground-doc p-5";
     case "txt":
+    case "json":
+    case "eml":
       return "p-5";
     default:
       return "docx-host";
@@ -175,11 +179,13 @@ function RenderedView({
       </>
     );
 
-  // .md / .csv render their engine Markdown (formatted doc / table).
-  if (ext === "md" || ext === "csv")
+  // .md / .csv, and the binary .msg / .epub (no lightweight viewer), render
+  // their engine Markdown (formatted doc / table).
+  if (ext === "md" || ext === "csv" || ext === "msg" || ext === "epub")
     return <div dangerouslySetInnerHTML={{ __html: docHtml }} />;
 
-  if (ext === "txt")
+  // Text formats show their real source verbatim.
+  if (ext === "txt" || ext === "json" || ext === "eml")
     return (
       <pre className="whitespace-pre-wrap wrap-break-word font-mono text-xs leading-relaxed text-foreground/90">
         {source}
@@ -225,7 +231,7 @@ export function DocumentPane({
   // (reusing docHtml), .txt as monospace text, .html in a sandboxed iframe.
   const decodedSource = React.useMemo(
     () =>
-      file && (ext === "txt" || ext === "html")
+      file && (ext === "txt" || ext === "html" || ext === "json" || ext === "eml")
         ? new TextDecoder().decode(file.bytes)
         : "",
     [file, ext]
