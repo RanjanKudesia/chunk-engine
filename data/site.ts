@@ -8,11 +8,12 @@ export const site = {
   tagline: "One chunking engine. Python, JavaScript, Rust.",
 
   /**
-   * Canonical site origin. Placeholder until the real domain is live — set
-   * `NEXT_PUBLIC_SITE_URL` in the deployment env to override everywhere
-   * (metadata, canonical, OpenGraph, sitemap, robots) in one place.
+   * Canonical site origin. Live at www.chunkengine.dev (apex 308-redirects to
+   * www). Override with `NEXT_PUBLIC_SITE_URL` in the deployment env if the
+   * canonical ever changes — it flows to metadata, canonical, OpenGraph,
+   * sitemap, and robots from this one place.
    */
-  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://chunk-engine.dev",
+  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.chunkengine.dev",
   description:
     "A fast, high-fidelity document chunking engine for RAG — 36 formats, one Rust core, with byte-identical bindings for Python, JavaScript, and Rust.",
 

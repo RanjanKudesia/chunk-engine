@@ -25,22 +25,22 @@ chunk-engine is a document-understanding engine (not a plain text splitter): it 
 
 ## Docs
 
-- Introduction: https://chunk-engine.dev/docs
-- Installation: https://chunk-engine.dev/docs/installation
-- Quick Start: https://chunk-engine.dev/docs/quick-start
-- Languages & parity: https://chunk-engine.dev/docs/languages
-- Chunking Modes: https://chunk-engine.dev/docs/chunking-modes
-- Output Schema: https://chunk-engine.dev/docs/output-schema
-- Supported Formats: https://chunk-engine.dev/docs/supported-formats
-- Streaming (support matrix + memory profiles): https://chunk-engine.dev/docs/streaming
-- Recipes (RAG ingestion, batch, streaming): https://chunk-engine.dev/docs/recipes
-- Framework Integration (Python, JavaScript, Rust — FastAPI, Flask, Django, Litestar, aiohttp, Celery, Express, Fastify, Hono, Next.js, NestJS, SvelteKit, Axum, Actix Web, Rocket, Warp): https://chunk-engine.dev/docs/framework-integration
-- API Reference: https://chunk-engine.dev/docs/api-reference
-- Metadata Reference (keys per format & mode): https://chunk-engine.dev/docs/metadata-reference
-- Architecture: https://chunk-engine.dev/docs/architecture
+- Introduction: https://www.chunkengine.dev/docs
+- Installation: https://www.chunkengine.dev/docs/installation
+- Quick Start: https://www.chunkengine.dev/docs/quick-start
+- Languages & parity: https://www.chunkengine.dev/docs/languages
+- Chunking Modes: https://www.chunkengine.dev/docs/chunking-modes
+- Output Schema: https://www.chunkengine.dev/docs/output-schema
+- Supported Formats: https://www.chunkengine.dev/docs/supported-formats
+- Streaming (support matrix + memory profiles): https://www.chunkengine.dev/docs/streaming
+- Recipes (RAG ingestion, batch, streaming): https://www.chunkengine.dev/docs/recipes
+- Framework Integration (Python, JavaScript, Rust — FastAPI, Flask, Django, Litestar, aiohttp, Celery, Express, Fastify, Hono, Next.js, NestJS, SvelteKit, Axum, Actix Web, Rocket, Warp): https://www.chunkengine.dev/docs/framework-integration
+- API Reference: https://www.chunkengine.dev/docs/api-reference
+- Metadata Reference (keys per format & mode): https://www.chunkengine.dev/docs/metadata-reference
+- Architecture: https://www.chunkengine.dev/docs/architecture
 
 ## Other
 
-- Benchmarks (measured vs Docling & Unstructured): https://chunk-engine.dev/benchmarks
-- Playground (chunk a document live in your browser): https://chunk-engine.dev/playground
+- Benchmarks (measured vs Docling & Unstructured): https://www.chunkengine.dev/benchmarks
+- Playground (chunk a document live in your browser): https://www.chunkengine.dev/playground
 - Source: https://github.com/RanjanKudesia
