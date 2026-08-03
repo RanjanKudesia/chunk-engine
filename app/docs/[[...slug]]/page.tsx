@@ -10,6 +10,8 @@ import { createRelativeLink } from "fumadocs-ui/mdx";
 
 import { source } from "@/lib/source";
 import { getMDXComponents } from "@/components/mdx";
+import { getDocMarkdown } from "@/lib/docs-markdown";
+import { CopyMarkdownButton } from "@/components/copy-markdown-button";
 
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
@@ -19,11 +21,20 @@ export default async function Page(props: {
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const markdown = getDocMarkdown(params.slug, {
+    title: page.data.title,
+    description: page.data.description,
+  });
+  const slugPath = params.slug?.length ? `/${params.slug.join("/")}` : "";
+  const rawHref = `/md${slugPath}`;
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
+      {markdown ? (
+        <CopyMarkdownButton markdown={markdown} rawHref={rawHref} />
+      ) : null}
       <DocsBody>
         <MDX
           components={getMDXComponents({
