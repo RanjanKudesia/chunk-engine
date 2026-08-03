@@ -1,0 +1,33 @@
+---
+title: Framework Integration
+description: Drop chunk-engine into any web handler — the same three-step recipe across Python, JavaScript, and Rust frameworks.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Callout } from "fumadocs-ui/components/callout";
+
+chunk-engine is a plain library call with no services, no global state, and no
+warm-up. That makes web integration the same everywhere, in every language:
+
+1. **Read the uploaded bytes** from the request.
+2. **Pass them with a `filename`** so the engine can route by extension (a named
+   `Blob`/`File` supplies its own name).
+3. **Return the chunks** — or stream them as they're produced.
+
+<Callout title="Pick a mode per use case">
+  Handlers below use the default mode for brevity. In practice pass
+  `mode="semantic"` for LLM/RAG ingestion or `mode="section"` for search
+  indexing — see [Chunking Modes](/docs/chunking-modes).
+</Callout>
+
+## By language
+
+<Cards>
+  <Card title="Python" href="/docs/framework-integration/python" description="FastAPI, Flask, Django, Litestar, aiohttp, Celery." />
+  <Card title="JavaScript" href="/docs/framework-integration/javascript" description="Express, Fastify, Hono, Next.js, NestJS, SvelteKit — Node, Bun, Deno." />
+  <Card title="Rust" href="/docs/framework-integration/rust" description="Axum, Actix Web, Rocket, Warp." />
+</Cards>
+
+For streaming responses (forwarding chunks as NDJSON while the document is still
+parsing), see [Streaming](/docs/streaming) — each language page includes a
+streaming handler where the framework supports it.

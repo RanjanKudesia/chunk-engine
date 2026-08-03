@@ -1,0 +1,34 @@
+---
+title: sliding_window
+description: Overlapping windows of content for dense retrieval.
+---
+
+`sliding_window` builds overlapping chunks: each window covers `window_size`
+units and shares `overlap` units with its neighbour. The overlap means a fact
+that sits on a boundary still appears intact in at least one chunk — useful for
+dense retrieval and sliding-context inference.
+
+```python
+from py_chunks import get_chunks
+
+chunks = get_chunks("notes.md", mode="sliding_window", window_size=3, overlap=1)
+```
+
+## Parameters
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| `window_size` | `3` | Units per window. Must be greater than 0. |
+| `overlap` | `1` | Units shared between adjacent windows. Must be less than `window_size`. |
+
+## content_type
+
+Chunks carry the `content_type` `sliding_window`. Metadata typically includes
+the window index and size so you can de-duplicate overlapping hits at query
+time.
+
+## When to use it
+
+- Dense retrieval where boundary facts must not be lost.
+- Sliding-context inference over long documents.
+- Recall-sensitive search where some redundancy is acceptable.

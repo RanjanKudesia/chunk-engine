@@ -1,0 +1,112 @@
+---
+title: API Reference
+description: Entry points and signatures for py-chunks, js-chunks, and rs-chunks.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+All three SDKs expose the same operations — batch chunking, streaming, Markdown
+conversion, and image extraction — over the same 36 formats. The names and
+argument styles follow each language's conventions.
+
+## Python — py-chunks
+
+```python
+get_chunks(
+    source, *,
+    filename: str | None = None,
+    mode: str = "default",
+    window_size: int = 3,
+    overlap: int = 1,
+    sentences_per_chunk: int = 3,
+    paragraphs_per_page: int = 15,
+    delimiter: str | None = None,
+    encoding: str = "utf-8",
+    list_images: bool = False,
+) -> list[dict] | ChunksResult
+
+stream_chunks(source, *, filename=None, mode="default", ...) -> Iterator[dict]
+
+get_markdown(source, *, filename=None, list_images=False) -> str | MarkdownResult
+```
+
+`source` may be a path, bytes (+`filename`), a file-like object, a framework
+upload, or an `http(s)` URL. Explicit helpers: `get_chunks_from_path`,
+`get_chunks_from_bytes`, `get_chunks_from_fileobj`, `get_chunks_from_upload`,
+`get_chunks_from_s3_presigned_url` (+ `stream_chunks_from_*`).
+
+Format-specific chunkers (`chunk_docx`, `chunk_pdf`, `chunk_xlsx`, …) return a
+tuple `(chunks, timing)` where `timing = {"rust_ms": ..., "python_ms": ...}`.
+With `list_images=True`, `get_chunks` returns a `ChunksResult(chunks, images)`
+and `get_markdown` a `MarkdownResult(markdown, images)`.
+
+## JavaScript — js-chunks
+
+```ts
+interface Chunk { content: string; contentType: string; metadata: Record<string, unknown>; }
+interface ChunkImage { name: string; data: Uint8Array; }
+
+interface ChunkOptions {
+  mode?: ChunkMode;            // default "default"
+  windowSize?: number;         // default 3
+  overlap?: number;            // default 1
+  sentencesPerChunk?: number;  // default 3
+  paragraphsPerPage?: number;  // default 15
+  filename?: string;           // required for byte sources
+  listImages?: boolean;
+}
+
+function getChunks(source, opts?): Promise<Chunk[]>;
+function getChunks(source, opts: { listImages: true }): Promise<{ chunks: Chunk[]; images: ChunkImage[] }>;
+function getMarkdown(source, opts?): Promise<string>;
+function getMarkdown(source, opts: { listImages: true }): Promise<{ markdown: string; images: ChunkImage[] }>;
+function streamChunks(source, opts?): AsyncIterable<Chunk>;
+function chunkPdfMarkdown(markdown, totalPages, opts?): Promise<Chunk[]>;
+```
+
+`source` may be a string path (Node/Bun), `Uint8Array`, `ArrayBuffer`, `Buffer`,
+or `Blob`. WASM is instantiated lazily and cached on first call.
+
+<Callout type="info">
+  `contentType` is camelCase here (the WASM core emits `content_type`).
+  `chunkPdfMarkdown` lets you chunk PDF markdown you already have, without the
+  `@llamaindex/liteparse-wasm` peer dependency.
+</Callout>
+
+## Rust — rs-chunks
+
+Import name is `chunks_rs`. Every chunk is
+`Chunk { content: String, content_type: String, metadata: serde_json::Value }`.
+
+```rust
+use chunks_rs::{get_chunks, get_chunks_from_bytes, get_markdown};
+
+// get_chunks(path, mode, window_size, overlap, sentences_per_chunk, paragraphs_per_page)
+fn get_chunks(file_path: &str, mode: &str, window_size: usize, overlap: usize,
+              sentences_per_chunk: usize, paragraphs_per_page: usize) -> Result<Vec<Chunk>>;
+
+fn get_chunks_from_bytes(data: &[u8], filename: &str, mode: &str, window_size: usize,
+              overlap: usize, sentences_per_chunk: usize, paragraphs_per_page: usize) -> Result<Vec<Chunk>>;
+
+fn get_markdown(file_path: &str) -> Result<String>;
+```
+
+Each family is also available under `chunks_rs::formats::*`, exposing `chunk`,
+`chunk_with_options`, `stream` (a native `Iterator<Item = Result<Chunk>>`),
+`to_markdown`, and (where applicable) `*_with_images`:
+
+```rust
+use chunks_rs::formats::{csv, pptx};
+
+let chunks = csv::chunk("data.csv", "row", 10, 5, 1, true, None, "utf-8", true)?;
+for c in csv::stream("data.csv", "row", 10, 5, 1, true, None, "utf-8", true)? { let c = c?; }
+
+// (chunks, images) — images are (name, bytes) pairs
+let (chunks, images) = pptx::chunk_with_images("deck.pptx", "default", 3, 1, 3, 15)?;
+```
+
+## Shared: modes & parameters
+
+Regardless of language, the `mode` values and their parameters are the same —
+see [Chunking Modes](/docs/chunking-modes). Spreadsheet chunkers default to
+`row` and accept `rows_per_chunk`; prose chunkers default to `default`.

@@ -1,0 +1,49 @@
+---
+title: Quick Start
+description: Chunk any document, stream large files, and convert to Markdown — in Python, JavaScript, or Rust.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+<Callout type="info">
+  Every code block on this page is language-aware — use the tabs (or the global
+  switcher in the nav) to see Python, JavaScript, or Rust.
+</Callout>
+
+## Batch chunking
+
+Pass a source and, optionally, a `mode`. Each chunk has `content`, a typed
+`content_type`, and `metadata`.
+
+<LangCode id="quickstart" />
+
+## Streaming
+
+Yield chunks one at a time with constant memory — ideal for large files or
+streaming HTTP responses. Which modes stream and their per-format memory profile
+are in [Streaming](/docs/streaming).
+
+<LangCode id="streaming" />
+
+## Markdown conversion
+
+Convert any supported document to a Markdown string.
+
+<LangCode id="markdown" />
+
+## Image extraction
+
+Ask for embedded images alongside the chunks.
+
+<LangCode id="images" />
+
+Image extraction is supported for DOCX, PPTX, XLSX, HTML, PDF, DOC, PPT, EPUB,
+IPYNB, EML, and ODT/ODP — see [Supported Formats](/docs/supported-formats).
+
+## Next steps
+
+- [Input Sources](/docs/input-sources) — paths, bytes, uploads, URLs
+- [Chunking Modes](/docs/chunking-modes) — pick the right strategy
+- [Streaming](/docs/streaming) — bounded-memory processing for large files
+- [Framework Integration](/docs/framework-integration) — FastAPI, Express, Axum, and more
+- [API Reference](/docs/api-reference) — full signatures per language

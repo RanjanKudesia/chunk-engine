@@ -1,0 +1,51 @@
+---
+title: Introduction
+description: One document chunking engine for RAG — 36 formats, one Rust core, with byte-identical bindings for Python, JavaScript, and Rust.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Callout } from "fumadocs-ui/components/callout";
+
+**chunk-engine** turns any document into clean, retrieval-ready chunks in a
+single call. A Rust core does the parsing and segmentation; thin bindings give
+you the same API — and the **same output** — from **Python, JavaScript, or
+Rust**, across **36 file formats**.
+
+<LangCode id="quickstart" />
+
+Every chunk has three fields — `content`, a typed `content_type`, and
+`metadata` — ready to embed, index, or feed to an LLM.
+
+## One engine, three languages
+
+| Package | Install | Runtime |
+| --- | --- | --- |
+| **py-chunks** (PyPI) | `pip install py-chunks` | Python, via PyO3 |
+| **js-chunks** (npm) | `npm install js-chunks` | Node · Bun · Deno · browsers, via WASM |
+| **rs-chunks** (crates.io) | `cargo add rs-chunks` | Rust — the reference engine |
+
+<Callout title="Byte-identical output">
+  The SDKs wrap the same engine and are parity-checked to emit exactly the same
+  chunks — 2204/2214 comparisons identical, with the remainder tracing to the
+  reference engine's own non-determinism. See [Languages &
+  parity](/docs/languages).
+</Callout>
+
+## Why chunk-engine
+
+- **Rust-backed speed.** Parsing and chunking run in a compiled core, not a stack
+  of interpreted dependencies.
+- **One API, every format.** The same entry points work for Word, PowerPoint,
+  Excel, PDF, HTML, Markdown, email, eBooks, notebooks, and more.
+- **Structure-aware chunking.** Seven document modes and dedicated spreadsheet
+  modes keep headings, tables, and lists intact.
+- **Streaming built in.** Yield chunks with constant memory over huge files.
+
+## Start here
+
+<Cards>
+  <Card title="Installation" href="/docs/installation" description="Install for Python, JavaScript, or Rust." />
+  <Card title="Quick Start" href="/docs/quick-start" description="Chunk your first document in a few lines." />
+  <Card title="Languages & parity" href="/docs/languages" description="How the three SDKs relate and stay identical." />
+  <Card title="API Reference" href="/docs/api-reference" description="Signatures for all three languages." />
+</Cards>

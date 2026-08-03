@@ -1,0 +1,112 @@
+---
+title: Supported Formats
+description: 36 formats across Office, PDF, web, data, email, eBooks, and notebooks — with availability and image support.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+py-chunks handles **36 file extensions** through one API. Dispatch is by file
+extension, so the extension (or the `filename` you pass with bytes) must be
+correct.
+
+<Callout type="info" title="Availability">
+  **Stable** = long-confirmed in the published packages. **New** = present in the
+  engine source / latest builds; it may not be in your installed version yet —
+  upgrade to pick it up (`pip install -U py-chunks`, `npm i js-chunks@latest`,
+  `cargo update`). All 36 formats are supported by the shared engine; the
+  published package descriptions may document a subset.
+</Callout>
+
+## By family
+
+| Family | Extensions | Availability |
+| --- | --- | --- |
+| **Word** | `.docx` `.doc` | Stable |
+| | `.docm` `.dotx` `.dotm` | New |
+| **PowerPoint** | `.pptx` `.ppt` | Stable |
+| | `.potx` `.potm` `.ppsx` `.ppsm` | New |
+| **Spreadsheets** | `.xlsx` `.xls` | Stable |
+| | `.xlsm` `.xlsb` `.xltx` `.xltm` `.ods` | New |
+| **PDF** | `.pdf` | Stable |
+| **Web & Markup** | `.html` `.htm` `.md` | Stable |
+| | `.rtf` | New |
+| **OpenDocument** | `.odt` `.odp` | New |
+| **Plain & Data** | `.txt` `.csv` | Stable |
+| | `.tsv` `.json` `.jsonl` `.ndjson` | New |
+| **Email** | `.msg` `.eml` `.mbox` | New |
+| **eBooks & Notebooks** | `.epub` `.ipynb` | New |
+
+## Chunking modes per format
+
+- **Document formats** (DOCX, DOC, PDF, PPTX, PPT, MD, HTML, TXT, MSG, EML/MBOX,
+  ODT/ODP, JSON, RTF, EPUB, IPYNB): 7 modes — `default`, `structural`,
+  `section`, `semantic`, `sliding_window`, `sentence`, `page_aware`.
+- **Spreadsheets** (XLSX, XLS, XLSM, XLSB, ODS, XLTX, XLTM): 6 modes — `row`,
+  `table`, `sheet`, `sliding_window`, `page_aware`, `semantic`.
+- **CSV / TSV**: `row` (default), `sliding_window`, `page_aware`.
+
+## Markdown conversion
+
+`get_markdown` supports documents, spreadsheets, and delimited files — Word,
+PowerPoint, PDF, HTML, Excel, CSV/TSV, TXT, Markdown, and the OpenDocument /
+email / eBook / notebook families. It does not accept URLs.
+
+### What each format produces
+
+The conversion is format-aware — it maps each format's native structure to the
+closest Markdown construct rather than dumping plain text.
+
+| Format | Markdown output |
+| --- | --- |
+| `.docx` | Full fidelity: headings (`#`–`######` from Word heading styles / outline levels), unordered (`- item`) and ordered (`1. item`) lists with per-level indentation, pipe tables, fenced code blocks, hyperlinks as `[text](url)`, page/section breaks as `---`, footnotes/endnotes as `[^id]: text` appended at the end. |
+| `.doc` | H1 → `#`, H2–H3 → `##`, H4+ → `###`; lists → `- item`; each table paragraph → a pipe row with a `\| --- \|` separator; page breaks → `---`. |
+| `.pptx` | Presentation title → `# Title`; PPTX sections → `# Section`; each slide → `## Slide N: Title`; bullets (`- item` / `1. item`) with indentation; pipe tables; speaker notes as `> **Notes:** …`; slides/sections split by `---`. |
+| `.ppt` | Slide titles → `##`; body placeholders → `- item` bullets (multi-line) or prose; freeform text boxes included; slides split by `---`. |
+| `.pdf` | Headings inferred from font size vs document average → `#` / `##` / `###`; bullet lists normalized to `- item`; tab/space-aligned tables → pipe tables; page boundaries → `---`. |
+| `.html`, `.htm` | H1–H6 → `#`–`######`; ordered/unordered lists; fenced code blocks; pipe tables with an auto-detected header row; `\|` in cells escaped. |
+| `.xlsx`, `.xls` | Each non-empty sheet → `## SheetName` + a pipe table; sheets split by `---`. |
+| `.csv`, `.tsv` | A single pipe table; first row = header with a `\| --- \|` separator; delimiter auto-detected or set explicitly. |
+| `.md`, `.txt` | Returned as-is (no transformation). |
+
+With `list_images=True`, image-bearing formats additionally emit `![](hash.ext)`
+references at the natural anchor point (top of each PDF page, after each Excel
+sheet, at the anchoring DOCX/DOC paragraph, inside the owning slide) and return
+the raw bytes in `MarkdownResult.images`.
+
+## Image extraction
+
+`list_images=True` extracts embedded images for: **DOC, DOCX (family), PPT,
+PPTX (family), XLSX (family — incl. ODS/XLSB, not XLS), HTML/HTM, PDF, EPUB,
+IPYNB, EML/MBOX, ODT/ODP.**
+
+Formats **without** image support: CSV, TSV, TXT, MD, JSON, RTF, MSG, XLS.
+
+Only web-renderable formats are extracted (`.png`, `.jpg`, `.jpeg`, `.gif`,
+`.webp`); vector/metafile payloads (`.emf`, `.wmf`, `.pict`, `.dib`, `.tiff`) are
+silently skipped. Images are keyed by a stable **content hash**, so a picture
+that appears several times is stored once but referenced at each occurrence. PDF
+images are page-scoped and always re-encoded to `.png`. Image extraction is
+batch-only — see [Streaming](/docs/streaming).
+
+## Format-specific notes
+
+A few behaviors are worth knowing before you rely on a format:
+
+- **PDF `default` vs `structural` differ** (they are not aliases): `default` uses
+  a fast lightweight path, `structural` runs full font-size layout analysis. A
+  scanned / image-only PDF (no text layer) raises for text modes but *succeeds*
+  under `list_images=True`, returning one image per page — see
+  [Error Handling](/docs/error-handling).
+- **DOC / PPT (97–2003)** are parsed by a pure-Rust binary reader (no
+  LibreOffice, no external process). Only Word 97+ `.doc` is supported —
+  pre-Word 97 files raise. `.doc` `page_number` is always `null` (not present in
+  the binary format); DOC table cells are joined with ` | `.
+- **PPT** reads slides from the presentation's slide list in order; **speaker
+  notes and master text are excluded**, and slides are separated by `---`.
+- **XLS vs XLSX**: `.xls` cannot expose named tables or print areas, so `table`
+  mode falls back to bounding-box detection and `page_aware` to the full sheet;
+  `.xls` also returns no images. All other behavior matches `.xlsx`. See the
+  [Metadata Reference](/docs/metadata-reference#spreadsheets-xlsx--xls).
+- **Header detection** (spreadsheets/CSV): the first all-string row of each sheet
+  is auto-detected as the header and excluded from chunk content; unlabeled
+  columns become `Column 1`, `Column 2`, ….

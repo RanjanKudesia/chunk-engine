@@ -1,0 +1,69 @@
+---
+title: Installation
+description: Install chunk-engine for Python (pip), JavaScript (npm), or Rust (cargo).
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Pick your language — the install command follows the switcher at the top of the
+page.
+
+<InstallTabs />
+
+## Python — py-chunks
+
+- **Python 3.9+**. The Rust engine ships compiled inside the wheel.
+- One runtime dependency: [`pypdfium2`](https://pypi.org/project/pypdfium2/)
+  (installed automatically; bundles PDFium for PDF support).
+
+```bash
+pip install py-chunks
+```
+
+## JavaScript — js-chunks
+
+- **Node 18+**, Bun, Deno, and browsers/bundlers. The engine is compiled to
+  **WASM** and instantiated lazily on first call.
+- Filesystem-path sources are Node/Bun only — elsewhere pass bytes with a
+  `filename`.
+
+```bash
+npm install js-chunks
+```
+
+<Callout type="info" title="PDF in JavaScript">
+  PDF parsing uses the optional peer dependency
+  [`@llamaindex/liteparse-wasm`](https://www.npmjs.com/package/@llamaindex/liteparse-wasm)
+  (the same liteparse version as the Rust engine, so output is byte-identical).
+  Install it to enable `.pdf` sources:
+
+  ```bash
+  npm install @llamaindex/liteparse-wasm
+  ```
+
+  If you already have PDF markdown from another parser, chunk it directly with
+  `chunkPdfMarkdown(markdown, totalPages, opts?)` — no peer dependency needed.
+</Callout>
+
+## Rust — rs-chunks
+
+The reference engine. Published to crates.io as `rs-chunks`; the library import
+name is `chunks_rs`.
+
+```bash
+cargo add rs-chunks
+```
+
+```rust
+use chunks_rs::{get_chunks, get_markdown};
+```
+
+<Callout type="info" title="PDF feature flag">
+  Native PDF (via the `liteparse` crate / PDFium) is on by default through the
+  `pdf-native` feature. Disable default features for `wasm32` targets, where PDF
+  markdown is produced host-side and fed to `pdf::chunk_pdf_markdown`.
+</Callout>
+
+## Verify
+
+<LangCode id="quickstart" />

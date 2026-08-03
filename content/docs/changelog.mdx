@@ -1,0 +1,67 @@
+---
+title: Changelog
+description: Release history for py-chunks, reconstructed from git tags and commits.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Current versions: **py-chunks 0.5.0**, **js-chunks 0.1.0**, **rs-chunks 0.1.0**.
+
+<Callout type="info">
+  The history below tracks **py-chunks** (the longest-running package), from
+  which the shared engine grew. `rs-chunks` (the standalone Rust engine) and
+  `js-chunks` (the WASM binding) were extracted from that engine and published at
+  `0.1.0`. No package ships a `CHANGELOG` file; this is reconstructed from git
+  tags and commit messages.
+</Callout>
+
+## 0.5.0
+
+- **Seven new formats**, a **PDF liteparse rewrite** (PDF now runs through the
+  `liteparse` engine, which vendors its own PDFium), and **image extraction for
+  spreadsheets and HTML**.
+
+## 0.4.7
+
+- Image extraction for **DOC** and **PPT** (legacy binary formats) via MS-ODRAW
+  BLIP records (JPEG/PNG).
+
+## 0.4.6
+
+- Documentation fixes: PPT in the package description; `.pdf` added to the
+  `list_images` format list.
+
+## 0.4.4
+
+- **PPT (PowerPoint 97–2003)** support — a pure-Rust CFB parser, all 7 document
+  modes, streaming, and `to_markdown`.
+
+## 0.4.3
+
+- **PDF image extraction** via `list_images=True`, with a scanned-PDF fallback.
+
+## 0.4.2
+
+- Image extraction extended to **XLSX** and **HTML**; `get_chunks(list_images=True)`
+  and the `ChunksResult` API introduced.
+
+## 0.4.1
+
+- Image extraction via `get_markdown(list_images=True)` for **DOCX** and
+  **PPTX**.
+
+## 0.4.0
+
+- **DOC (Word 97–2003)** support and `get_markdown()` for all formats.
+
+## 0.3.1
+
+- **CSV** support (`row`, `sliding_window`, `page_aware`).
+
+## 0.3.0
+
+- **XLSX / XLS** support with 6 spreadsheet modes.
+
+## 0.2.0
+
+- **Streaming** for all formats and a Rust module refactor.

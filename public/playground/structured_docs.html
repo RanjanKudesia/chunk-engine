@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>API Reference: py-chunks</title></head>
+<body>
+
+<h1>py-chunks API Reference</h1>
+
+<p>Complete reference for the py-chunks chunking library. All public functions, parameters, and output schemas.</p>
+
+<h2>Installation</h2>
+
+<pre><code>pip install py-chunks</code></pre>
+
+<p>Requires Python 3.9 or later. The PDFium binary is bundled inside the wheel — no separate installation needed.</p>
+
+<h2>Core Functions</h2>
+
+<h3>get_chunks</h3>
+
+<p>Unified entry point that accepts any source type and returns a list of chunk dicts.</p>
+
+<pre><code>get_chunks(
+    source,
+    *,
+    filename=None,
+    mode="default",
+    window_size=3,
+    overlap=1,
+    sentences_per_chunk=3,
+    paragraphs_per_page=15,
+) -&gt; list[dict]</code></pre>
+
+<p>The source argument is dispatched automatically:</p>
+
+<ul>
+  <li>str or Path — treated as a local file path</li>
+  <li>str starting with http:// or https:// — treated as a presigned URL</li>
+  <li>bytes, bytearray, or memoryview — raw document bytes (filename required)</li>
+  <li>object with .filename attribute — FastAPI / Starlette UploadFile</li>
+  <li>object with .read() method — file-like object (BytesIO, open file)</li>
+</ul>
+
+<h3>stream_chunks</h3>
+
+<p>Streaming equivalent of get_chunks. Returns an iterator that yields one chunk dict per step.</p>
+
+<pre><code>stream_chunks(
+    source,
+    *,
+    filename=None,
+    mode="default",
+    window_size=3,
+    overlap=1,
+    sentences_per_chunk=3,
+    paragraphs_per_page=15,
+) -&gt; Iterator[dict]</code></pre>
+
+<p>Supported formats for streaming: PDF (all 7 modes), DOCX (default and structural only), MD (all 6 modes), TXT (all 6 modes), HTML (all 6 modes), PPTX (all 7 modes).</p>
+
+<h2>Chunking Modes</h2>
+
+<h3>structural (default)</h3>
+
+<p>One chunk per detected block element. Each element is assigned a content_type.</p>
+
+<table>
+  <thead><tr><th>Format</th><th>Block types detected</th></tr></thead>
+  <tbody>
+    <tr><td>PDF</td><td>heading, paragraph, table (via font-size analysis)</td></tr>
+    <tr><td>DOCX</td><td>heading, paragraph, table, bullet_list, code_block</td></tr>
+    <tr><td>HTML</td><td>h1-h6, p, pre, table, ul/ol</td></tr>
+    <tr><td>MD</td><td>heading, paragraph, code_block, table, list</td></tr>
+    <tr><td>TXT</td><td>heading (ALL CAPS), paragraph, code, table, list</td></tr>
+  </tbody>
+</table>
+
+<h3>section</h3>
+
+<p>Groups all content under a heading into one chunk. The section ends at the next heading of equal or higher level. Sections exceeding 2000 characters are split at paragraph boundaries.</p>
+
+<pre><code>chunks = get_chunks("doc.html", mode="section")
+meta = chunks[0]["metadata"]
+# meta["section_heading"] -&gt; "2. Operational Metrics"
+# meta["section_level"]   -&gt; 2
+# meta["heading_path"]    -&gt; ["API Reference", "Core Functions"]</code></pre>
+
+<h3>semantic</h3>
+
+<p>Merges paragraphs by topic continuity using ten heuristic signals. No ML models or external dependencies required.</p>
+
+<ol>
+  <li>Transition break — however, nevertheless, in contrast (always starts new chunk)</li>
+  <li>Reference continuity — this, it, they, these (same referent)</li>
+  <li>Elaboration — additionally, furthermore, moreover</li>
+  <li>Example — for example, for instance, e.g.</li>
+  <li>Cause/effect — therefore, thus, as a result</li>
+  <li>Contrast continuation — although, despite, whereas</li>
+  <li>Question/answer pair — previous paragraph ends with ?</li>
+  <li>Definition expansion — previous is a short label ending with :</li>
+  <li>Short paragraph absorption — paragraph &lt;= 80 chars</li>
+  <li>Keyword overlap — shared significant terms</li>
+</ol>
+
+<h3>sliding_window</h3>
+
+<p>Overlapping windows of N blocks. Useful for RAG pipelines that need context overlap.</p>
+
+<pre><code>chunks = get_chunks("doc.html", mode="sliding_window", window_size=4, overlap=1)
+meta = chunks[0]["metadata"]
+# meta["window_index"]     -&gt; 0
+# meta["paragraph_range"]  -&gt; [0, 3]
+# meta["window_size"]      -&gt; 4
+# meta["overlap"]          -&gt; 1</code></pre>
+
+<h3>sentence</h3>
+
+<p>N sentences per chunk. Sentence boundaries detected without NLP using punctuation rules. Handles common abbreviations: Mr. Dr. vs. etc.</p>
+
+<pre><code>chunks = get_chunks("doc.html", mode="sentence", sentences_per_chunk=2)
+meta = chunks[0]["metadata"]
+# meta["actual_sentence_count"]  -&gt; 2
+# meta["source_paragraph_index"] -&gt; 0</code></pre>
+
+<h3>page_aware</h3>
+
+<p>Groups blocks by heading boundary (primary) or paragraph count (fallback). For HTML the heading boundary is an explicit h1-h6 tag. For TXT and MD it is a detected heading. For PPTX each slide is one page.</p>
+
+<pre><code>chunks = get_chunks("doc.html", mode="page_aware", paragraphs_per_page=10)
+meta = chunks[0]["metadata"]
+# meta["page_break_type"] -&gt; "heading_boundary" or "estimated"
+# meta["paragraph_count"] -&gt; 7</code></pre>
+
+<h2>Output Schema</h2>
+
+<p>Every chunk dict has exactly three keys regardless of format or mode:</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Type</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>content</td><td>str</td><td>Extracted text</td></tr>
+    <tr><td>content_type</td><td>str</td><td>Classification (see below)</td></tr>
+    <tr><td>metadata</td><td>dict</td><td>Format and mode-specific fields</td></tr>
+  </tbody>
+</table>
+
+<h3>content_type values</h3>
+
+<ul>
+  <li>heading — section heading</li>
+  <li>plain_paragraph — regular prose</li>
+  <li>bullet_list — unordered or numbered list</li>
+  <li>table — tabular data</li>
+  <li>code_block — code or preformatted text</li>
+  <li>long_single_paragraph — paragraph &gt; 900 characters</li>
+  <li>short_disconnected_paragraph — paragraph &lt; 90 characters</li>
+  <li>section — heading-scoped grouped content</li>
+  <li>semantic — topic-continuity grouped content</li>
+  <li>sliding_window — overlapping window</li>
+  <li>sentence — sentence-count group</li>
+  <li>page_aware — page boundary group</li>
+</ul>
+
+<h2>Error Handling</h2>
+
+<p>All functions raise descriptive exceptions with clear messages.</p>
+
+<table>
+  <thead><tr><th>Exception</th><th>Condition</th></tr></thead>
+  <tbody>
+    <tr><td>FileNotFoundError</td><td>Path does not exist</td></tr>
+    <tr><td>ValueError</td><td>Unsupported extension, invalid mode, bad parameter</td></tr>
+    <tr><td>TypeError</td><td>Unsupported source type</td></tr>
+    <tr><td>RuntimeError</td><td>Rust-level failure (e.g. no extractable text in PDF)</td></tr>
+    <tr><td>NotImplementedError</td><td>Streaming for an unsupported format</td></tr>
+  </tbody>
+</table>
+
+</body>
+</html>

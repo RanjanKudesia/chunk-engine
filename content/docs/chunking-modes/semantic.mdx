@@ -1,0 +1,33 @@
+---
+title: semantic
+description: Group semantically coherent passages for embeddings and LLMs.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+`semantic` groups coherent passages so boundaries follow meaning rather than
+markup. It's the recommended mode when the chunks feed an embedding model or an
+LLM, because each chunk is a self-contained idea.
+
+```python
+from py_chunks import get_chunks
+
+chunks = get_chunks("research.pdf", mode="semantic")
+```
+
+## content_type
+
+Semantic chunks carry the `content_type` `semantic`. The grouping is driven by
+multiple signals (heading structure, paragraph proximity, length, and content
+similarity), so a chunk may span several source paragraphs that belong together.
+
+## When to use it
+
+- Feeding an embedding model — coherent chunks embed better.
+- LLM context where you want complete thoughts, not fragments.
+- General-purpose RAG when you're not sure which mode to pick.
+
+<Callout title="Recommended default">
+  Start with `semantic` for LLM/embedding pipelines and `section` for search
+  indexes.
+</Callout>

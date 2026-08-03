@@ -1,0 +1,87 @@
+---
+title: Chunking Modes
+description: Seven document modes plus dedicated spreadsheet modes — how to pick the right one.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+The `mode` argument controls how a document is segmented. Document formats
+support **seven** modes; spreadsheet and delimited formats have their own set.
+
+## Document modes
+
+| Mode | What it does |
+| --- | --- |
+| [`default`](/docs/chunking-modes/structural) | Element-level chunks (per format; DOCX normalizes to `structural`). |
+| [`structural`](/docs/chunking-modes/structural) | One chunk per paragraph / heading / table / list. |
+| [`section`](/docs/chunking-modes/section) | All content under a heading grouped into one chunk. |
+| [`semantic`](/docs/chunking-modes/semantic) | Semantically coherent passages grouped together. |
+| [`sliding_window`](/docs/chunking-modes/sliding-window) | Overlapping windows for dense retrieval. |
+| [`sentence`](/docs/chunking-modes/sentence) | A fixed number of sentences per chunk. |
+| [`page_aware`](/docs/chunking-modes/page-aware) | Preserves the document's page (or slide) layout. |
+
+Applies to DOCX, DOC, PDF, PPTX, PPT, Markdown, HTML, TXT, MSG, EML/MBOX,
+ODT/ODP, JSON, RTF, EPUB, and IPYNB.
+
+## Pick your mode
+
+| I want to… | Best mode |
+| --- | --- |
+| Index every paragraph and heading individually | `default` / `structural` |
+| Keep all content under a heading in one chunk | `section` |
+| Feed coherent passages to an LLM or embedding model | `semantic` |
+| Enforce a fixed sentence count per chunk | `sentence` |
+| Build overlapping chunks for dense retrieval | `sliding_window` |
+| Preserve page layout for page-referenced citations | `page_aware` |
+
+<Callout title="Default recommendation">
+  Start with **`semantic`** when feeding an LLM and **`section`** when building a
+  document search index. Use **`default`/`structural`** when you need
+  fine-grained, element-level control.
+</Callout>
+
+## Mode parameters
+
+| Parameter | Default | Applies to |
+| --- | --- | --- |
+| `window_size` | `3` | `sliding_window` (must be &gt; 0) |
+| `overlap` | `1` | `sliding_window` (must be &lt; `window_size`) |
+| `sentences_per_chunk` | `3` | `sentence` (must be &gt; 0) |
+| `paragraphs_per_page` | `15` | `page_aware` (PPTX defaults to `5`, meaning slides per chunk) |
+
+## Spreadsheet & delimited modes
+
+Spreadsheets (XLSX / XLS / XLSM / XLSB / ODS / XLTX / XLTM) support six modes —
+`row`, `table`, `sheet`, `sliding_window`, `page_aware`, `semantic` — and CSV /
+TSV support three: `row` (default), `sliding_window`, `page_aware`.
+
+| Mode | What it does |
+| --- | --- |
+| `row` | N data rows per chunk (`content_type` `row_document` / `row_group`). |
+| `table` | One chunk per detected table region (XLSX/XLS only). |
+| `sheet` | One chunk per worksheet. |
+| `sliding_window` | Overlapping row windows (`row_window`). |
+| `page_aware` | Rows grouped into page-sized chunks (`sheet_region`). |
+| `semantic` | Semantically grouped rows (`semantic_group`). |
+
+### Spreadsheet & delimited parameters
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| `rows_per_chunk` | `1` (XLSX) / `10` (CSV) | Rows per `row` chunk. |
+| `max_chunk_chars` | `2000` | Cap for `table` / `sheet` / `page_aware` chunks (XLSX). |
+| `include_headers` | `true` | Repeat the header row in each chunk. |
+| `sheet_names` | all | Restrict to specific worksheets (XLSX). |
+| `skip_empty_rows` | `true` | Drop blank rows. |
+| `serialize_as` | `key_value` | How a row is rendered (XLSX). |
+| `delimiter` | auto | `,` `\t` `;` `\|` (CSV/TSV). |
+| `encoding` | `utf-8` | `utf-8` / `utf-8-bom` / `latin-1` / `windows-1252` (CSV). |
+
+<Callout type="info">
+  Through the unified `get_chunks` / `getChunks`, spreadsheets use `row` when you
+  pass the default mode, and rows-per-chunk is derived from `sentences_per_chunk`
+  / `sentencesPerChunk`. For direct control of `rows_per_chunk`, `delimiter`,
+  `max_chunk_chars`, or `sheet_names`, call the format-specific chunker
+  (`chunk_xlsx` / `chunk_csv` in Python, `chunks_rs::formats::{xlsx,csv}` in Rust)
+  — see the [API Reference](/docs/api-reference).
+</Callout>

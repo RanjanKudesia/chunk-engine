@@ -1,0 +1,135 @@
+QUARTERLY SYSTEM HEALTH REPORT
+================================
+Period: Q1 2026
+Prepared by: Platform Engineering
+Classification: Internal
+
+EXECUTIVE SUMMARY
+-----------------
+System availability reached 99.94% this quarter, exceeding the 99.90% target.
+Latency improved across all regions. Three incidents were recorded, none of which
+breached SLA thresholds. Capacity planning is on track for projected Q2 load.
+
+KEY METRICS
+-----------
+Metric                   | Q1 2026  | Target   | Delta    | Status
+-------------------------|----------|----------|----------|----------
+Availability             | 99.94%   | 99.90%   | +0.04%   | ON TRACK
+P95 Latency (ms)         | 182      | 200      | -18      | ON TRACK
+P99 Latency (ms)         | 310      | 350      | -40      | ON TRACK
+Error Rate               | 0.21%    | 0.30%    | -0.09%   | ON TRACK
+SLA Breaches             | 0        | <=2      | -2       | ON TRACK
+Mean Time to Recovery    | 14 min   | 30 min   | -16 min  | ON TRACK
+
+INCIDENT LOG
+------------
+Incident 1
+Date: 2026-01-14
+Duration: 22 minutes
+Affected: ap-southeast-1
+Root Cause: Misconfigured autoscaling policy triggered premature scale-in
+Resolution: Policy corrected; added pre-scale health check gate
+SLA Impact: None
+
+Incident 2
+Date: 2026-02-08
+Duration: 8 minutes
+Affected: us-east-1 (single availability zone)
+Root Cause: Transient upstream DNS resolution failure
+Resolution: Added fallback resolver; updated monitoring alert threshold
+SLA Impact: None
+
+Incident 3
+Date: 2026-03-21
+Duration: 31 minutes
+Affected: eu-west-1
+Root Cause: Index rebuild during peak traffic window exceeded lock timeout
+Resolution: Rescheduled maintenance to off-peak; added lock timeout alerting
+SLA Impact: None
+
+INFRASTRUCTURE STATUS
+---------------------
+
+Compute
+Node count increased from 28 to 34 to support projected Q2 demand.
+CPU utilisation averaged 42% across the fleet, within the 60% operational ceiling.
+Memory utilisation averaged 58%, within the 75% ceiling.
+
+Storage
+Total provisioned storage is 48 TB across three regions.
+Current utilisation is 31 TB (65%).
+Log retention policy was reduced from 90 days to 30 days, freeing 8 TB.
+
+Networking
+Internal service mesh latency averaged 3.2 ms, within the 5 ms budget.
+External CDN cache hit rate improved from 81% to 87% following configuration changes.
+
+DEPLOYMENT SUMMARY
+------------------
+Deployments this quarter: 47
+Rollbacks: 2
+Average deployment duration: 6 minutes
+Deployment success rate: 95.7%
+
+All deployments used canary release strategy with automated rollback triggers.
+The two rollbacks were caused by metric threshold breaches within the canary window
+and did not result in customer-visible errors.
+
+SECURITY UPDATES
+----------------
+Dependency audit completed on 2026-03-01.
+12 dependencies were updated to address known CVEs.
+No critical vulnerabilities were identified in first-party code.
+Penetration test scheduled for Q2.
+
+Access control review completed. 3 stale service accounts were deactivated.
+MFA enforcement extended to all administrative interfaces.
+
+CAPACITY FORECAST
+-----------------
+Based on Q1 growth of 18% in request volume, Q2 requires the following additions:
+
+- Compute: 6 additional nodes (total: 40)
+- Database: Read replica added to us-east-1 cluster
+- Cache: Redis cluster memory increased from 64 GB to 128 GB
+- Storage: Additional 12 TB provisioned
+
+Budget request submitted. Approval expected by end of Q1.
+
+RELIABILITY IMPROVEMENTS
+------------------------
+
+Completed this quarter:
+[x] Circuit breaker implemented on all downstream service calls
+[x] Timeout budgets standardised across all endpoints
+[x] Distributed tracing coverage increased from 60% to 95% of request paths
+[x] Alert fatigue reduction: reduced alert count by 34% through consolidation
+
+Planned for next quarter:
+[ ] Chaos engineering programme launch
+[ ] Synthetic monitoring for all critical user journeys
+[ ] Database connection pool tuning
+[ ] Automated capacity scaling based on predictive signals
+
+DEPENDENCIES AND RISKS
+-----------------------
+Risk 1: Upstream API rate limits
+Third-party geocoding API introduced new rate limits in February.
+Current usage is at 72% of the new limit. Caching implementation is underway.
+Expected completion: 2026-04-15.
+
+Risk 2: Database version end of life
+PostgreSQL 13 reaches end of life in November 2025.
+Migration to PostgreSQL 16 is scheduled for Q2.
+Test environment migration completed successfully.
+
+Risk 3: Single point of failure in batch processing
+Nightly batch job runs on a single worker with no failover.
+Redesign to distributed job queue is in progress.
+Expected completion: 2026-05-30.
+
+CONTACT
+-------
+Platform Engineering: platform@example.com
+On-call rotation: See PagerDuty schedule
+Runbooks: https://internal.wiki/platform/runbooks

@@ -1,0 +1,9 @@
+{
+  "title": "Framework Integration",
+  "pages": [
+    "index",
+    "python",
+    "javascript",
+    "rust"
+  ]
+}

@@ -1,0 +1,111 @@
+---
+title: Metadata Reference
+description: The exact metadata keys each format emits per mode — so you can filter, branch, and show provenance with confidence.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Every chunk's `metadata` is a dictionary whose keys depend on **both the format
+and the mode**. [Output Schema](/docs/output-schema) covers the common keys; this
+page is the full matrix for when you need to rely on a specific field.
+
+<Callout type="info" title="Always use optional access">
+  Treat every field as optional — read it with `chunk["metadata"].get(key)`
+  (Python), `chunk.metadata[key]` with a presence check (JS), or
+  `chunk.metadata.get(key)` on the `serde_json::Value` (Rust). Keys are
+  identical across languages; only JavaScript's top-level chunk field is
+  camelCase (`contentType`), while everything inside `metadata` is passed through
+  untouched.
+</Callout>
+
+## Document formats
+
+Keys by mode for the prose/binary document families (PDF, DOCX, DOC, PPTX, PPT,
+Markdown, HTML, TXT).
+
+| Mode | Format(s) | Notable metadata keys |
+| --- | --- | --- |
+| `default` / `structural` | PDF | `page_number`, `is_heading`, `avg_font_size` |
+| `default` / `structural` | DOCX | `section_heading`, `section_heading_level`, `footnotes` (list of `{id, text}`), `endnotes`, `page_number`, `document_metadata` (`header_text`, `footer_text`, `image_count`) |
+| `default` / `structural` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type` (`heading`/`normal`/`table`/`list_item`), `heading_level` (1–6 or null), `page_number` (always null — not in the binary format) |
+| `default` / `structural` | MD / HTML / TXT | `section_heading`, `document_metadata.source_type` |
+| `default` / `structural` | PPTX | `slide_number`, `section_heading` (when detectable) |
+| `section` | PDF | `page_number`, `section_heading`, `section_level`, `heading_path`, `paragraph_count`, `heading_font_size` |
+| `section` | DOCX | `section_heading`, `section_heading_level`, `section_level`, `heading_path`, `document_metadata` |
+| `section` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `section` | MD / HTML / TXT / PPTX | `section_heading`, `section_level`, `heading_path`, `paragraph_count` |
+| `semantic` | PDF | `page_number`, `paragraph_count`, `merge_reason` |
+| `semantic` | DOCX | `section_heading`, `section_heading_level`, `paragraph_count`, `merge_reason`, `document_metadata` |
+| `semantic` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `semantic` | MD / HTML / TXT / PPTX | `paragraph_count`, `merge_reasons` (list), `primary_merge_reason`, `keyword_density`, `avg_block_length` (MD/TXT), `section_heading`, `heading_path`, `chunk_index`, `document_metadata` |
+| `sentence` | PDF | `sentences_per_chunk`, `actual_sentence_count`, `chunk_index`, `source_paragraph_index` |
+| `sentence` | DOCX | `sentences_per_chunk`, `actual_sentence_count`, `chunk_index`, `source_paragraph_index`, `source_paragraph_is_heading`, `source_paragraph_heading_level`, `source_paragraph_is_list`, `source_paragraph_is_table`, `document_metadata` |
+| `sentence` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `sentence` | MD / HTML / TXT / PPTX | `sentences_per_chunk`, `actual_sentence_count`, `chunk_index`, `source_paragraph_index` |
+| `sliding_window` | PDF | `window_size`, `overlap`, `window_index`, `paragraph_count`, `paragraph_range`, `page_number` |
+| `sliding_window` | DOCX | `window_size`, `overlap`, `window_index`, `paragraph_indices`, `list_item_count`, `heading_count`, `paragraph_meta`, `document_metadata` |
+| `sliding_window` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `sliding_window` | MD / HTML / TXT / PPTX | `window_size`, `overlap`, `window_index`, `paragraph_count`, `paragraph_range` |
+| `page_aware` | PDF | `page_number`, `page_break_type`, `paragraph_count`, `document_metadata` |
+| `page_aware` | DOCX | `page_number`, `page_break_type`, `paragraph_count`, `section_heading_level`, `headings`, `list_item_count`, `table_count`, `document_metadata` |
+| `page_aware` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `page_aware` | MD / HTML / TXT | `page_number`, `page_break_type`, `paragraph_count` |
+| `page_aware` | PPTX | `slide_numbers`, `paragraph_count` |
+
+## Spreadsheets (XLSX / XLS)
+
+| Mode | `content_type` | Notable metadata keys |
+| --- | --- | --- |
+| `row` | `row_document` | `sheet_name`, `sheet_index`, `row_index`, `header_row`, `col_count`, `rows_per_chunk`, `actual_row_count`, `chunk_index` |
+| `table` | `table_region` | `sheet_name`, `sheet_index`, `table_name`, `is_named_table`, `header_row`, `start_row`, `end_row`, `start_col`, `end_col`, `row_count`, `col_count`, `chunk_index`, `is_split`, `split_part` |
+| `sheet` | `sheet` | `sheet_name`, `sheet_index`, `row_count`, `col_count`, `header_row`, `has_named_tables`, `named_tables`, `chunk_index`, `is_split`, `split_part` |
+| `sliding_window` | `row_window` | `sheet_name`, `sheet_index`, `window_size`, `overlap`, `actual_row_count`, `window_index`, `start_row`, `end_row`, `header_row`, `col_count`, `chunk_index` |
+| `page_aware` | `sheet_region` | `sheet_name`, `sheet_index`, `has_print_area`, `print_area_ref`, `start_row`, `end_row`, `start_col`, `end_col`, `row_count`, `col_count`, `header_row`, `region_index`, `chunk_index`, `is_split`, `split_part` |
+| `semantic` | `semantic_group` | `sheet_name`, `sheet_index`, `category_column`, `category_value`, `used_fallback`, `low_grouping_quality`, `avg_group_size`, `start_row`, `end_row`, `actual_row_count`, `header_row`, `col_count`, `group_index`, `chunk_index` |
+
+<Callout type="info" title="XLS vs XLSX">
+  `.xls` cannot expose named tables or print areas: in `table` mode
+  `is_named_table` is always `false` (heuristic bounding-box detection is used),
+  in `sheet` mode `has_named_tables` is always `false` with an empty
+  `named_tables`, and `page_aware` always falls back to the full sheet
+  (`has_print_area: false`). Every other mode is identical to `.xlsx`.
+</Callout>
+
+## CSV / TSV
+
+| Mode | `content_type` | Notable metadata keys |
+| --- | --- | --- |
+| `row` / `default` / `page_aware` | `row_group` | `row_start`, `row_end`, `row_count`, `col_count`, `header_row`, `delimiter_detected`, `encoding`, `chunk_index` |
+| `sliding_window` | `row_window` | `window_index`, `window_size`, `overlap`, `row_start`, `row_end`, `actual_row_count`, `col_count`, `header_row`, `delimiter_detected`, `encoding`, `chunk_index` |
+
+## Image chunks
+
+When `list_images` is on, each `content_type="image"` chunk carries
+format-specific keys:
+
+| Format | Image-chunk metadata keys |
+| --- | --- |
+| DOCX | `image_name`, `alt_text`, `page_number`, `document_metadata` |
+| PPTX | `slide_number`, `image_name`, `alt_text`, `document_metadata` |
+| XLSX | `sheet_name`, `sheet_index`, `image_name`, `alt_text` |
+| HTML | `image_name`, `alt_text`, `document_metadata` (`source_type: "html"`) |
+| PDF | `page_number`, `image_name`, `document_metadata` (`source_type: "pdf"`, `total_pages`) — no `alt_text`; always re-encoded to `.png` |
+| DOC | `image_name`, `paragraph_index` (or `null` for floating/unanchored images) |
+| PPT | `image_name`, `page_number` (1-based slide, or `null` if it can't be safely attributed) |
+
+## Enumerated values
+
+Two `semantic`-mode fields take a fixed set of values:
+
+- **DOCX `merge_reason`** — one of `heading_merge`, `keyword_overlap`,
+  `reference_continuity`, `short_paragraph`, `transition_break`.
+- **MD / HTML / TXT / PPTX `primary_merge_reason`** — one of
+  `reference_continuity`, `elaboration`, `example`, `cause_effect`,
+  `contrast_continuation`, `question_answer`, `definition_expansion`,
+  `short_paragraph`, `keyword_overlap`, or `initial` (for singleton chunks).
+
+<Callout>
+  The full `merge_reasons` list (every signal that fired) is also present for
+  MD/HTML/TXT/PPTX semantic chunks; `primary_merge_reason` is just the winning
+  one. See [Chunking Modes → semantic](/docs/chunking-modes/semantic).
+</Callout>

@@ -1,0 +1,49 @@
+---
+title: Recipes
+description: Practical, copy-pasteable patterns for RAG ingestion, batch processing, and streaming — in Python, JavaScript, or Rust.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Common end-to-end patterns. Every snippet is language-aware — use the tabs (or
+the global switcher in the nav) to see Python, JavaScript, or Rust.
+
+## RAG ingestion
+
+Chunk a document into semantically coherent passages, embed each one, and store
+it with its metadata. `semantic` mode gives the best embedding boundaries.
+
+<LangCode id="ragPipeline" />
+
+Each chunk carries typed `content_type` and `metadata` (section headings, page
+numbers, …), so you can filter results or show provenance at query time — see
+the [Output Schema](/docs/output-schema).
+
+## Batch a folder of mixed formats
+
+The same call handles every format, so a mixed folder just works. Isolate
+failures per file so one bad document doesn't halt the batch.
+
+<LangCode id="batchFolder" />
+
+## Stream a large file
+
+`stream_chunks` / `streamChunks` yield chunks one at a time with constant
+memory — ideal for large files or streaming an HTTP response.
+
+<LangCode id="streaming" />
+
+<Callout type="info">
+  Streaming yields exactly the same chunks as the batch call, just incrementally.
+  In Rust, streaming is per-format via `chunks_rs::formats::*::stream(...)`.
+</Callout>
+
+## Convert to Markdown
+
+Get a Markdown string from any supported document (for previews, diffing, or
+feeding a Markdown-native tool).
+
+<LangCode id="markdown" />
+
+See also [Framework Integration](/docs/framework-integration) for FastAPI,
+Flask, Django, Express, and Axum handlers.

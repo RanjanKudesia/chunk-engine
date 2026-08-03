@@ -1,0 +1,74 @@
+---
+title: Input Sources
+description: Pass a path, bytes, a file-like object, a framework upload, or a URL — with the right API for each language.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+All three SDKs dispatch by **file extension**, so a path carries its own
+extension and byte sources need a `filename`.
+
+## Local path
+
+```python
+# Python
+from py_chunks import get_chunks
+chunks = get_chunks("/data/report.pdf")
+```
+
+```ts
+// JavaScript (Node / Bun only)
+import { getChunks } from "js-chunks";
+const chunks = await getChunks("./report.pdf");
+```
+
+```rust
+// Rust
+let chunks = chunks_rs::get_chunks("report.pdf", "default", 3, 1, 3, 15)?;
+```
+
+## Raw bytes
+
+When you only have bytes, supply a `filename` so the engine can route by
+extension.
+
+<LangCode id="inputBytes" />
+
+- **Python**: `get_chunks_from_bytes(data, filename)` — or `get_chunks(data, filename=...)`.
+- **JavaScript**: pass a `Uint8Array`, `ArrayBuffer`, Node `Buffer`, or a named
+  `Blob`; a `Blob` supplies its own name.
+- **Rust**: `get_chunks_from_bytes(&data, filename, mode, window_size, overlap, sentences_per_chunk, paragraphs_per_page)`.
+
+## File-like objects & uploads
+
+<Callout type="info" title="Python">
+  `get_chunks_from_fileobj(file_obj, filename=None)` for file-like objects, and
+  `get_chunks_from_upload(upload_file)` for FastAPI / Starlette / Django uploads.
+  If an upload's `read()` is async, read the bytes yourself and use the bytes
+  API. See [Framework Integration](/docs/framework-integration).
+</Callout>
+
+<Callout type="info" title="JavaScript">
+  Pass a `Blob` (browsers), or an `ArrayBuffer` / `Uint8Array` / `Buffer` (Node)
+  with a `filename`. There are no separate helper functions — `getChunks` is
+  polymorphic over the source type.
+</Callout>
+
+<Callout type="info" title="Rust">
+  Read the bytes yourself (`std::fs::read`, an HTTP body, etc.) and call
+  `get_chunks_from_bytes(...)`. The per-format modules under `chunks_rs::formats`
+  also expose `*_from_bytes` entry points.
+</Callout>
+
+## Remote / URL sources
+
+- **Python**: `get_chunks_from_s3_presigned_url(url, filename=None, timeout=60)`,
+  or `get_chunks("https://…")` which auto-detects `http`/`https`.
+- **JavaScript / Rust**: fetch the bytes first, then pass them with a `filename`.
+
+```ts
+// JavaScript
+const res = await fetch(url);
+const bytes = new Uint8Array(await res.arrayBuffer());
+const chunks = await getChunks(bytes, { filename: "report.pdf" });
+```

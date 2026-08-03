@@ -1,0 +1,38 @@
+---
+title: page_aware
+description: Preserve the document's page (or slide) layout for page-referenced citations.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+`page_aware` preserves the document's original page layout, keeping chunks
+aligned to pages. This is what you want when citations need to reference a page
+number — legal, financial, or academic documents.
+
+```python
+from py_chunks import get_chunks
+
+chunks = get_chunks("contract.pdf", mode="page_aware")
+```
+
+## Parameters
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| `paragraphs_per_page` | `15` | Paragraphs grouped per page-sized chunk. |
+
+<Callout type="info" title="PowerPoint">
+  For PPTX, `page_aware` defaults to `5` and means **slides per chunk**. PPTX
+  also accepts `slides_per_chunk`, which takes precedence when set.
+</Callout>
+
+## content_type
+
+Chunks carry the `content_type` `page_aware`. Metadata typically includes the
+page number (or slide range) so you can cite locations back to the source.
+
+## When to use it
+
+- Page-referenced citations ("see p. 12").
+- Preserving layout for documents where the page is a meaningful unit.
+- Slide-scoped chunking of presentations.

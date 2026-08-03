@@ -1,0 +1,112 @@
+---
+title: Error Handling
+description: What raises, when, and how to handle it robustly.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+The same failure modes apply across all three SDKs — only how they surface
+differs:
+
+| Language | How errors surface |
+| --- | --- |
+| **Python** | Raises exceptions (`ValueError`, `TypeError`, `FileNotFoundError`, …). |
+| **JavaScript** | Rejected promises (`Error`) — use `try/catch` with `await`. |
+| **Rust** | Returns `Err(ChunkError)`. Adversarial inputs fail cleanly and **never panic** (panic-prone third-party parsers are wrapped). |
+
+The examples below are Python, but the cases — and the fix for each — are the
+same in every language.
+
+## Unsupported or mismatched extension
+
+Dispatch is by file extension. If the extension isn't supported — or the
+`filename` you pass with bytes doesn't match the actual content — you'll get an
+error identifying the unsupported type.
+
+```python
+from py_chunks import get_chunks
+
+try:
+    chunks = get_chunks("archive.zip")
+except (ValueError, Exception) as e:
+    print("Could not chunk:", e)
+```
+
+<Callout type="warn" title="Bytes need a filename">
+  When passing raw bytes, always include `filename=` (or use
+  `get_chunks_from_bytes(data, filename)`). Without an extension py-chunks can't
+  pick a chunker.
+</Callout>
+
+## Invalid mode parameters
+
+Mode parameters are validated. Common cases:
+
+- `sliding_window`: `window_size` must be &gt; 0 and `overlap` must be &lt;
+  `window_size`.
+- `sentence`: `sentences_per_chunk` must be &gt; 0.
+- Passing a `mode` a format doesn't support raises an error.
+
+```python
+# raises: overlap must be less than window_size
+get_chunks("f.pdf", mode="sliding_window", window_size=2, overlap=2)
+```
+
+## Async uploads
+
+If you pass an upload object whose `read()` is a coroutine, py-chunks raises a
+`TypeError`:
+
+> `upload_file.read() is async; pass upload_file.file or use bytes API`
+
+In async handlers, read the bytes yourself and use the bytes API:
+
+```python
+data = await file.read()
+chunks = get_chunks_from_bytes(data, file.filename)
+```
+
+## Corrupt or unreadable files
+
+Malformed documents surface parsing errors from the underlying engine. Wrap
+calls in `try/except` and treat failures per-document so one bad file doesn't
+halt a batch:
+
+```python
+results = []
+for path in paths:
+    try:
+        results.append((path, get_chunks(path)))
+    except Exception as e:
+        results.append((path, {"error": str(e)}))
+```
+
+## Scanned / image-only PDFs
+
+A PDF with no text layer (a scan, or pages rendered as images) can't be chunked
+as text — the text modes raise `RuntimeError: PDF appears to contain no
+extractable text`. The image path is the exception: `list_images=True` succeeds
+and returns **one image per page** instead of raising.
+
+```python
+try:
+    chunks = get_chunks("scanned.pdf")           # raises — no text layer
+except RuntimeError:
+    result = get_chunks("scanned.pdf", list_images=True)  # succeeds
+    pages = [c for c in result.chunks if c["content_type"] == "image"]
+    # → one PNG per page, ready for OCR downstream
+```
+
+## Legacy `.doc` too old
+
+Only Word 97–2003 `.doc` files are supported. A pre-Word 97 binary raises
+`RuntimeError: Pre-Word 97 .doc files are not supported. Convert to .docx
+first.` — convert it (e.g. via LibreOffice) and retry.
+
+<Callout type="warn" title="Images are batch-only">
+  `list_images` / `listImages` is **not** accepted by the streaming entry points
+  — image extraction needs the whole document. Requesting a streaming
+  format/mode combination that isn't supported raises `NotImplementedError` in
+  Python. If you need image bytes, use `get_chunks(..., list_images=True)` (batch)
+  — see [Streaming](/docs/streaming).
+</Callout>

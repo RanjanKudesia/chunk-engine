@@ -1,0 +1,31 @@
+---
+title: sentence
+description: A fixed number of sentences per chunk for tight token budgets.
+---
+
+`sentence` produces chunks of a fixed number of sentences. When you have a tight
+token budget and want predictable chunk sizes, this mode gives you consistent,
+sentence-aligned boundaries.
+
+```python
+from py_chunks import get_chunks
+
+chunks = get_chunks("article.docx", mode="sentence", sentences_per_chunk=3)
+```
+
+## Parameters
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| `sentences_per_chunk` | `3` | Sentences per chunk. Must be greater than 0. |
+
+## content_type
+
+Chunks carry the `content_type` `sentence`. Metadata typically records the
+actual sentence count per chunk (the last chunk may hold fewer).
+
+## When to use it
+
+- Strict token budgets where uniform chunk sizes matter.
+- Models or indexes that assume short, even inputs.
+- Sentence-level highlighting or citation.

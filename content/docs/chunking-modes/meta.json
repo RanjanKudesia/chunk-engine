@@ -1,0 +1,12 @@
+{
+  "title": "Chunking Modes",
+  "pages": [
+    "index",
+    "structural",
+    "section",
+    "semantic",
+    "sliding-window",
+    "sentence",
+    "page-aware"
+  ]
+}

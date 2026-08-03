@@ -1,0 +1,96 @@
+---
+title: Streaming
+description: Yield chunks one at a time with bounded memory — which modes stream, the per-format memory profile, and how output stays byte-identical to batch.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Every format streams. `stream_chunks` / `streamChunks` (and per-format
+`stream(...)` in Rust) yield one chunk at a time so you can forward, persist, or
+embed each chunk before the whole document is parsed.
+
+## When to use streaming
+
+- Processing large documents where you want to act on each chunk immediately.
+- Piping chunks into a queue, vector store, database, or an HTTP response.
+- Keeping memory bounded regardless of document size — for the formats that
+  support true incremental parsing (see the profile column below).
+
+<LangCode id="streaming" />
+
+<Callout title="Byte-identical to batch">
+  Streaming output equals the batch call for every format and every supported
+  mode — `list(stream_chunks(...)) == get_chunks(...)`. This is enforced by the
+  engine's parity tests, so you can switch between batch and streaming without
+  changing results.
+</Callout>
+
+## Support matrix
+
+The streamable modes match each format's batch modes. The **memory profile**
+describes how much of the document must be held at once — a property of the
+parsing algorithm, so it holds across Python, JavaScript, and Rust.
+
+| Format | Streamable modes | Memory profile |
+| --- | --- | --- |
+| **PDF** | All 7 | **Incremental** — one chunk at a time. |
+| **Markdown / HTML / TXT** | All 7 | **Incremental** for `structural` / `semantic` (O(blocks)); parse-once-then-drain for the other four modes. |
+| **DOCX** | All 7 | Parse-once-then-drain — the document is parsed a single time, then chunks emit lazily. Peak ≈ file size + chunk vector. |
+| **DOC** (Word 97–2003) | All 7 | Parse-once-then-drain (binary piece-table reconstruction up front). |
+| **PPT** (PowerPoint 97–2003) | All 7 | Parse-once-then-drain (slide text extracted up front). |
+| **PPTX** | All 7 | Parse-once-then-drain — the ZIP must be read in full before the first chunk. |
+| **XLSX / XLS** | All 6 | **Incremental** for `row` / `sliding_window`; parse-once-then-drain for `table` / `sheet` / `page_aware` / `semantic` (they need whole-sheet analysis first). |
+| **CSV / TSV** | All 3 | **Incremental** — true line-by-line; `sliding_window` uses an O(window\_size) rolling buffer and never loads the full file. |
+
+<Callout type="info" title="Profiles, not runtimes">
+  "Incremental" is a property of the algorithm. In Python and native Rust the
+  incremental paths use background threads / state machines; the WASM build runs
+  the same logic synchronously. Either way, an incremental format never
+  materializes every chunk at once, while a parse-once format holds the parsed
+  document (not all chunks' worth of duplicated text) before emitting lazily.
+</Callout>
+
+## Per-language shape
+
+| | Streaming call | Yields |
+| --- | --- | --- |
+| **Python** | `stream_chunks(source, mode=...)` | a `dict` iterator |
+| **JavaScript** | `streamChunks(source, { mode })` | an `AsyncIterable<Chunk>` |
+| **Rust** | `chunks_rs::formats::*::stream(...)` | `Iterator<Item = Result<Chunk>>` |
+
+Python also exposes source-specific streaming helpers —
+`stream_chunks_from_path`, `stream_chunks_from_bytes`,
+`stream_chunks_from_fileobj`, `stream_chunks_from_upload`, and
+`stream_chunks_from_s3_presigned_url` — mirroring the batch helpers in
+[Input Sources](/docs/input-sources).
+
+```python
+# Python — stream a large PDF section-by-section into a vector store
+from py_chunks import stream_chunks
+
+for chunk in stream_chunks("large.pdf", mode="section"):
+    heading = chunk["metadata"].get("section_heading", "")
+    store_in_db(heading, chunk["content"])
+```
+
+<Callout type="warn" title="Images are batch-only">
+  `list_images` / `listImages` is **not** available on the streaming entry
+  points — image extraction needs the whole document. Use
+  `get_chunks(..., list_images=True)` (or `getChunks(..., { listImages: true })`)
+  when you need image bytes. See [Supported Formats](/docs/supported-formats#image-extraction).
+</Callout>
+
+## Bytes sources & cleanup
+
+When you stream from bytes (e.g. a request body), Python writes a temporary file
+with the right extension and removes it when the iterator is exhausted or you
+exit early — use it as a context manager to guarantee cleanup:
+
+```python
+with stream_chunks(data, filename="big.pdf", mode="section") as it:
+    for chunk in it:
+        ...
+```
+
+See [Framework Integration](/docs/framework-integration) for a FastAPI streaming
+response that forwards NDJSON as chunks are produced.

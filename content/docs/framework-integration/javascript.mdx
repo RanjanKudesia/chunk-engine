@@ -1,0 +1,150 @@
+---
+title: JavaScript
+description: chunk-engine (js-chunks) in Express, Fastify, Hono, Next.js, NestJS, and SvelteKit — across Node, Bun, and Deno.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+`getChunks` is polymorphic over its source: pass a `Uint8Array` / `ArrayBuffer` /
+`Buffer` with a `filename`, or a named `Blob`/`File` (which carries its own
+name). WASM is instantiated lazily and cached on the first call.
+
+<Callout type="info" title="Runtime note">
+  js-chunks runs on Node, Bun, Deno, and browsers. In serverless/edge contexts,
+  run it on a **Node.js runtime** (not the edge runtime) so the WASM module and
+  optional PDF peer dependency load — see the Next.js example below.
+</Callout>
+
+## Express (Node)
+
+```ts
+import express from "express";
+import multer from "multer";
+import { getChunks } from "js-chunks";
+
+const app = express();
+const upload = multer(); // in-memory: exposes req.file.buffer
+
+app.post("/chunk", upload.single("document"), async (req, res) => {
+  const chunks = await getChunks(req.file.buffer, {
+    filename: req.file.originalname,
+  });
+  res.json({ chunks });
+});
+```
+
+## Fastify
+
+```ts
+import Fastify from "fastify";
+import multipart from "@fastify/multipart";
+import { getChunks } from "js-chunks";
+
+const app = Fastify();
+await app.register(multipart);
+
+app.post("/chunk", async (req) => {
+  const file = await req.file();          // @fastify/multipart
+  const buffer = await file.toBuffer();
+  const chunks = await getChunks(buffer, { filename: file.filename });
+  return { chunks };
+});
+```
+
+## Hono (Node · Bun · Deno · Workers)
+
+Hono's `parseBody` yields web `File` objects, so no filename plumbing is needed:
+
+```ts
+import { Hono } from "hono";
+import { getChunks } from "js-chunks";
+
+const app = new Hono();
+
+app.post("/chunk", async (c) => {
+  const body = await c.req.parseBody();
+  const file = body["document"] as File;   // a named Blob
+  const chunks = await getChunks(file);
+  return c.json({ chunks });
+});
+
+export default app;
+```
+
+## Next.js (App Router route handler)
+
+```ts
+// app/api/chunk/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { getChunks } from "js-chunks";
+
+export const runtime = "nodejs"; // WASM + optional PDF peer dep need Node
+
+export async function POST(req: NextRequest) {
+  const form = await req.formData();
+  const file = form.get("document") as File;
+  const chunks = await getChunks(file);    // File is a named Blob
+  return NextResponse.json({ chunks });
+}
+```
+
+## NestJS
+
+```ts
+import {
+  Controller, Post, UploadedFile, UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { getChunks } from "js-chunks";
+
+@Controller("chunk")
+export class ChunkController {
+  @Post()
+  @UseInterceptors(FileInterceptor("document"))
+  async chunk(@UploadedFile() file: Express.Multer.File) {
+    const chunks = await getChunks(file.buffer, {
+      filename: file.originalname,
+    });
+    return { chunks };
+  }
+}
+```
+
+## SvelteKit
+
+```ts
+// src/routes/chunk/+server.ts
+import { json } from "@sveltejs/kit";
+import { getChunks } from "js-chunks";
+
+export async function POST({ request }) {
+  const form = await request.formData();
+  const file = form.get("document") as File;
+  const chunks = await getChunks(file);
+  return json({ chunks });
+}
+```
+
+## Browser
+
+There's no server round-trip needed — pass the `File` from an
+`<input type="file">` straight to `getChunks`:
+
+```ts
+import { getChunks } from "js-chunks";
+
+input.addEventListener("change", async () => {
+  const chunks = await getChunks(input.files[0]); // named File → filename inferred
+  render(chunks);
+});
+```
+
+This is exactly how the [Playground](/playground) works — chunking runs entirely
+client-side in WASM, and the file never leaves the browser.
+
+<Callout type="info" title="PDF in JS">
+  `.pdf` sources need the optional peer dependency
+  `@llamaindex/liteparse-wasm`. If you already have PDF markdown, chunk it with
+  `chunkPdfMarkdown(markdown, totalPages)` — no peer dependency. See
+  [Installation](/docs/installation#javascript--js-chunks).
+</Callout>

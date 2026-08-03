@@ -1,0 +1,94 @@
+---
+title: Output Schema
+description: Every chunk is a dict with content, content_type, and metadata — plus the full content-type catalogue.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Every chunk returned by `get_chunks` / `stream_chunks` is a plain Python `dict`
+with exactly three keys:
+
+```python
+{
+    "content": "Revenue grew 18% quarter-over-quarter…",
+    "content_type": "semantic",
+    "metadata": { "chunk_index": 4, "section_heading": "Q3 Summary", ... }
+}
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `content` | `str` | The chunk's text. |
+| `content_type` | `str` | What the chunk represents (see below). |
+| `metadata` | `dict` | Format- and mode-specific fields. Treat all as optional. |
+
+### Accessing the fields
+
+The shape is identical across languages. Only the field access differs — note
+that **JavaScript exposes `contentType` (camelCase)** while Python and Rust use
+`content_type`.
+
+<LangCode id="outputAccess" />
+
+## content_type values
+
+The `content_type` tells you what a chunk is. Prose and markup formats emit:
+
+| Value | Meaning |
+| --- | --- |
+| `heading` | A heading / section title. |
+| `plain_paragraph` | A standard paragraph. |
+| `long_single_paragraph` | A single long paragraph chunk. |
+| `short_disconnected_paragraph` | A short, standalone paragraph. |
+| `bullet_list` | A bulleted or numbered list. |
+| `table` | A table, kept whole. |
+| `code_block` | A fenced/indented code block. |
+| `image` | An extracted image (when `list_images=True`). |
+
+Mode-named types appear when you select that mode: `section`, `semantic`,
+`sliding_window`, `sentence`, `page_aware`.
+
+DOCX additionally emits `mixed_content`, `footnote_caption`, and `header_footer`.
+
+<Callout type="info" title="Spreadsheets">
+  Spreadsheet and CSV chunks use their own content types — for example
+  `row_document`, `table_region`, `sheet`, `row_window`, `sheet_region`, and
+  `semantic_group` (XLSX), or `row_group` and `row_window` (CSV).
+</Callout>
+
+## Metadata fields
+
+`metadata` is a dict whose keys depend on the format and mode — **all fields are
+optional**. Commonly-seen keys include:
+
+- `chunk_index`, `total_chunks` — position within the document
+- `source_type`, `document_metadata` — provenance
+- `section_heading`, `heading_path`, `heading_level`, `section_level` — structure
+- `page_number`, `page_break_type` — page layout (`page_aware`)
+- `window_index`, `window_size`, `overlap` — windows (`sliding_window`)
+- `sentences_per_chunk`, `actual_sentence_count` — sentence mode
+- `sheet_name`, `sheet_index`, `start_row`, `end_row`, `header_row`, `col_count` — spreadsheets
+- `slide_number`, `slide_range`, `slide_count`, `total_slides` — presentations
+- `image_name`, `alt_text` — image chunks
+- `merge_reasons`, `keyword_density` — semantic grouping
+
+<Callout>
+  Because metadata is optional and format-dependent, always use `.get()` when
+  reading a specific field rather than assuming it's present.
+</Callout>
+
+For the **exact keys each format emits in each mode** — plus the enumerated
+`merge_reason` / `primary_merge_reason` values — see the
+[Metadata Reference](/docs/metadata-reference).
+
+## Image chunks & results
+
+With `list_images=True`, `get_chunks` returns a `ChunksResult`:
+
+```python
+result.chunks   # list[dict] — text chunks plus content_type="image" chunks
+result.images   # dict[str, bytes] — {"<hash>.jpeg": b"...", ...}
+```
+
+`get_markdown(..., list_images=True)` returns a `MarkdownResult` with
+`.markdown` (a string with `![](hash.ext)` refs) and `.images`.

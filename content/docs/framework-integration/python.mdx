@@ -1,0 +1,145 @@
+---
+title: Python
+description: chunk-engine (py-chunks) in FastAPI, Flask, Django, Litestar, aiohttp, and Celery.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+py-chunks ships upload-aware helpers so you rarely handle bytes yourself:
+`get_chunks_from_upload` for framework upload objects,
+`get_chunks_from_bytes(data, filename)` for raw bytes, plus the matching
+`stream_chunks_from_*` variants. See [Input Sources](/docs/input-sources).
+
+## FastAPI
+
+```python
+from fastapi import FastAPI, File, UploadFile
+from py_chunks import get_chunks_from_upload
+
+app = FastAPI()
+
+@app.post("/chunk/")
+async def chunk_document(file: UploadFile = File(...)):
+    chunks = get_chunks_from_upload(file)
+    return {"chunks": chunks}
+```
+
+### FastAPI — streaming response
+
+Forward each chunk as NDJSON while the document is still being parsed:
+
+```python
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import StreamingResponse
+from py_chunks import stream_chunks_from_upload
+import json
+
+app = FastAPI()
+
+@app.post("/chunk/stream/")
+async def chunk_stream(file: UploadFile = File(...)):
+    def generate():
+        for chunk in stream_chunks_from_upload(file):
+            yield json.dumps(chunk) + "\n"
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+```
+
+### FastAPI — Markdown conversion
+
+```python
+from fastapi import FastAPI, File, UploadFile
+from py_chunks import get_markdown
+
+app = FastAPI()
+
+@app.post("/markdown/")
+async def to_markdown(file: UploadFile = File(...)):
+    data = await file.read()
+    return {"markdown": get_markdown(data, filename=file.filename)}
+```
+
+## Flask
+
+```python
+from flask import Flask, request
+from py_chunks import get_chunks_from_bytes
+
+app = Flask(__name__)
+
+@app.post("/chunk")
+def chunk_document():
+    file = request.files["document"]
+    chunks = get_chunks_from_bytes(file.read(), file.filename)
+    return {"chunks": chunks}
+```
+
+## Django
+
+```python
+from django.http import JsonResponse
+from py_chunks import get_chunks_from_upload
+
+def chunk_view(request):
+    if request.FILES:
+        chunks = get_chunks_from_upload(request.FILES["document"])
+        return JsonResponse({"chunks": chunks})
+    return JsonResponse({"error": "No file"}, status=400)
+```
+
+## Litestar
+
+```python
+from litestar import Litestar, post
+from litestar.datastructures import UploadFile
+from litestar.enums import RequestEncodingType
+from litestar.params import Body
+from py_chunks import get_chunks_from_bytes
+
+@post("/chunk")
+async def chunk_document(
+    data: UploadFile = Body(media_type=RequestEncodingType.MULTI_PART),
+) -> dict:
+    content = await data.read()
+    return {"chunks": get_chunks_from_bytes(content, data.filename)}
+
+app = Litestar([chunk_document])
+```
+
+## aiohttp
+
+```python
+from aiohttp import web
+from py_chunks import get_chunks_from_bytes
+
+async def chunk_document(request):
+    reader = await request.multipart()
+    field = await reader.next()               # the "document" part
+    data = await field.read(decode=False)
+    chunks = get_chunks_from_bytes(data, field.filename)
+    return web.json_response({"chunks": chunks})
+
+app = web.Application()
+app.add_routes([web.post("/chunk", chunk_document)])
+```
+
+## Celery — background job
+
+Chunking is CPU work; run it off the request path in a worker.
+
+```python
+import celery
+from py_chunks import get_chunks
+
+@celery.task
+def process_document(file_path: str):
+    chunks = get_chunks(file_path, mode="semantic")
+    # embed + persist to your vector store here
+    return len(chunks)
+```
+
+<Callout type="warn" title="Async uploads">
+  If an upload object's `read()` is a coroutine (some ASGI stacks),
+  `get_chunks_from_upload` raises `TypeError`. Read the bytes yourself and use
+  the bytes API: `data = await file.read(); get_chunks_from_bytes(data,
+  file.filename)`. See [Error Handling](/docs/error-handling#async-uploads).
+</Callout>

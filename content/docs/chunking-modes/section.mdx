@@ -1,0 +1,33 @@
+---
+title: section
+description: Group all content under a heading into a single chunk.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+`section` keeps everything under a heading together in one chunk — the heading
+plus its paragraphs, lists, and tables. It's the go-to mode for building a
+document search index where each result should be a self-contained section.
+
+```python
+from py_chunks import get_chunks
+
+chunks = get_chunks("handbook.docx", mode="section")
+```
+
+## content_type
+
+Section chunks carry the `content_type` `section`. Metadata typically includes
+the section heading and heading path so you can show breadcrumbs in results.
+
+<Callout type="info">
+  Section chunks are capped at roughly 2,000 characters; longer sections are
+  split so no single chunk becomes unwieldy for embedding.
+</Callout>
+
+## When to use it
+
+- Document search indexes where a hit should return a whole section.
+- RAG where you want enough surrounding context to answer, but scoped to one
+  topic.
+- Navigation / outline features keyed on headings.

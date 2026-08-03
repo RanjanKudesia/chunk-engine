@@ -1,0 +1,53 @@
+---
+title: Languages & parity
+description: How py-chunks, js-chunks, and rs-chunks relate — and how they stay byte-identical.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+chunk-engine ships as three packages that share one Rust core. Choose whichever
+fits your stack; the output is the same.
+
+| Package | Registry | Install | How it works |
+| --- | --- | --- | --- |
+| **py-chunks** | PyPI | `pip install py-chunks` | Native Python extension via PyO3 |
+| **js-chunks** | npm | `npm install js-chunks` | WASM core — Node, Bun, Deno, browsers |
+| **rs-chunks** | crates.io | `cargo add rs-chunks` | The reference engine — pure Rust |
+
+`rs-chunks` is the source of truth; `py-chunks` and `js-chunks` wrap the same
+engine (the WASM build for JS is produced from the Rust crate).
+
+## API dialects
+
+The operations are identical; the surface follows each language's conventions.
+
+| Concept | Python | JavaScript | Rust |
+| --- | --- | --- | --- |
+| Batch | `get_chunks(...)` | `getChunks(...)` | `get_chunks(...)` |
+| Stream | `stream_chunks(...)` | `streamChunks(...)` | `formats::*::stream(...)` |
+| Markdown | `get_markdown(...)` | `getMarkdown(...)` | `get_markdown(...)` |
+| Content type field | `chunk["content_type"]` | `c.contentType` | `c.content_type` |
+| Options | keyword args | options object | positional args |
+
+## Parity
+
+`rs-chunks` is validated against the `py-chunks` reference engine over **every
+fixture × every mode**:
+
+- **2204 / 2214 comparisons byte-identical (99.5%).** All OOXML, legacy binary
+  (`.doc`/`.ppt`), OpenDocument, email, ebook, and delimited families are
+  identical.
+- **Image extraction: 1056 / 1056 identical** (chunk counts, image counts,
+  names, and image-chunk contents).
+- **Markdown conversion: 273 / 273 identical** (markdown string + image set).
+
+<Callout title="About the 0.5%">
+  The remaining differences are confined to `semantic`-mode
+  `primary_merge_reason`, a tie-break the reference engine resolves via
+  randomized `HashMap` iteration order — i.e. **py-chunks itself is
+  non-deterministic there**, and rs-chunks reproduces that behavior. Chunk
+  content and the `merge_reasons` list are identical.
+</Callout>
+
+Adversarial inputs fail with a clean error and never panic — panic-prone
+third-party parsers are wrapped.

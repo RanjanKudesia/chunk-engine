@@ -1,0 +1,73 @@
+---
+title: Architecture
+description: A thin language binding dispatches by file type into one compiled Rust engine.
+---
+
+chunk-engine is one Rust engine (`rs-chunks`) with thin language bindings. Each
+binding handles ergonomics — input detection, dispatch, and result shaping —
+while all parsing and chunking happens in Rust.
+
+- **Python (`py-chunks`)** binds the engine natively via PyO3.
+- **JavaScript (`js-chunks`)** loads the engine compiled to WASM (Node, Bun,
+  Deno, browsers).
+- **Rust (`rs-chunks`)** is the engine itself — the reference implementation.
+
+Because every binding calls the same core, the output is byte-identical (see
+[Languages & parity](/docs/languages)).
+
+<div className="my-8 flex flex-col items-stretch gap-3 font-mono text-sm">
+  <div className="rounded-lg border border-border bg-fd-card p-4">
+    <div className="text-brand">Language binding — Python · JavaScript · Rust</div>
+    <div className="mt-1 text-fd-muted-foreground">
+      get_chunks / getChunks · stream · get_markdown · from path / bytes /
+      fileobj / upload / URL
+    </div>
+  </div>
+  <div className="text-center text-fd-muted-foreground">↓ detect source · resolve extension</div>
+  <div className="rounded-lg border border-border bg-fd-card p-4">
+    <div className="text-brand">Dispatcher</div>
+    <div className="mt-1 text-fd-muted-foreground">
+      extension → format chunker (docx, pdf, pptx, xlsx, csv, html, md, …)
+    </div>
+  </div>
+  <div className="text-center text-fd-muted-foreground">↓ call the compiled Rust core (PyO3 · WASM · native)</div>
+  <div className="rounded-lg border border-brand/40 bg-brand/5 p-4">
+    <div className="text-brand">Rust engine</div>
+    <div className="mt-1 text-fd-muted-foreground">
+      parse → classify blocks (ContentType) → apply mode → build chunks + metadata
+    </div>
+  </div>
+  <div className="text-center text-fd-muted-foreground">↑ typed chunks — list[dict] · Chunk[] · Vec&lt;Chunk&gt;</div>
+</div>
+
+## How a call flows
+
+1. **Input detection.** The unified functions inspect `source` — path, bytes,
+   file-like, framework upload, or `http(s)` URL — and normalize it. In Python,
+   non-path inputs are written to a temporary file with the correct extension
+   and cleaned up afterward; the Rust and WASM builds parse bytes in memory via
+   `from_bytes` entry points.
+2. **Dispatch.** The file extension selects a format chunker. The extension is
+   the single source of truth, which is why bytes inputs require a `filename`.
+3. **Rust engine.** The compiled core parses the document, classifies each block
+   into a `ContentType`, applies the requested `mode`, and returns typed chunks
+   with metadata.
+4. **Result shaping.** The binding maps the Rust result into the language's
+   native shape — a Python `list[dict]`, a JS `Chunk[]`, or a Rust
+   `Vec<Chunk>` — plus the image variants when requested.
+
+## Design principles
+
+- **Rust does the work.** Parsing and chunking are compiled, not interpreted, and
+  don't pull in a heavy dependency tree in any language.
+- **One dispatch table.** Every format flows through the same entry points, so
+  the API surface stays small as formats are added.
+- **Streaming built in.** The engine can yield chunks incrementally, exposed as
+  `stream_chunks` (Python), `streamChunks` (JavaScript), and per-format
+  `stream(...)` (Rust). Memory is bounded for the truly incremental formats
+  (PDF, CSV, and the Markdown/HTML/TXT state machines); container formats parse
+  once, then emit lazily — see [Streaming](/docs/streaming) for the per-format
+  profile.
+- **Byte-identical across bindings.** Because every binding calls the same core,
+  the output matches exactly — verified by the parity suite (see
+  [Languages & parity](/docs/languages)).

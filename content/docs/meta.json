@@ -1,0 +1,24 @@
+{
+  "title": "Docs",
+  "pages": [
+    "---Getting Started---",
+    "index",
+    "installation",
+    "quick-start",
+    "languages",
+    "---Guides---",
+    "input-sources",
+    "chunking-modes",
+    "output-schema",
+    "supported-formats",
+    "streaming",
+    "framework-integration",
+    "recipes",
+    "error-handling",
+    "---Reference---",
+    "api-reference",
+    "metadata-reference",
+    "architecture",
+    "changelog"
+  ]
+}

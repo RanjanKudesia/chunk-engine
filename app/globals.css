@@ -1,26 +1,306 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* Fumadocs UI (scoped to /docs via its own fd-* variable namespace). */
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@source "../node_modules/fumadocs-ui/dist/**/*.js";
+
+/*
+ * py-chunks design system
+ * Dark-first. ONE accent (rust/molten orange). Warm-neutral grays.
+ * next-themes toggles the `.dark` class on <html>; dark is the default.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* --- Light mode: warm off-white / cream (a nod to Bun's warmth) --- */
+  --background: #faf8f5;
+  --foreground: #1c1917;
+
+  --surface: #ffffff;
+  --surface-2: #f3efe8;
+
+  --card: #ffffff;
+  --card-foreground: #1c1917;
+  --popover: #ffffff;
+  --popover-foreground: #1c1917;
+
+  /* Brand accent — identical hue across themes; the one color that matters */
+  --brand: #e8511e;
+  --brand-2: #ff7a3c;
+  --brand-foreground: #ffffff;
+
+  /* shadcn primary maps to the brand accent */
+  --primary: #e8511e;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f3efe8;
+  --secondary-foreground: #1c1917;
+
+  --muted: #f3efe8;
+  --muted-foreground: #78716c;
+
+  /* shadcn "accent" = subtle hover surface (NOT the brand color) */
+  --accent: #f3efe8;
+  --accent-foreground: #1c1917;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+
+  --border: #e7e2d9;
+  --input: #e7e2d9;
+  --ring: #e8511e;
+
+  --radius: 0.5rem;
+
+  /* Height of our global SiteHeader — Fumadocs offsets its sticky sidebar/TOC
+     by this so the docs sit below the shared navbar. */
+  --fd-nav-height: 64px;
+
+  /* Categorical hues for the ChunkVisualizer (keyed by content_type).
+     Distinct + legible on both charcoal and cream; used as tinted fills. */
+  --ct-heading: #e8511e;
+  --ct-paragraph: #6366f1;
+  --ct-list: #10b981;
+  --ct-table: #f59e0b;
+  --ct-code: #a855f7;
+  --ct-section: #06b6d4;
+  --ct-semantic: #f43f5e;
+  --ct-window: #14b8a6;
+}
+
+.dark {
+  /* --- Dark mode (default): near-black charcoal --- */
+  --background: #0e0e10;
+  --foreground: #f5f5f4;
+
+  --surface: #161618;
+  --surface-2: #1c1c20;
+
+  --card: #161618;
+  --card-foreground: #f5f5f4;
+  --popover: #161618;
+  --popover-foreground: #f5f5f4;
+
+  --brand: #e8511e;
+  --brand-2: #ff7a3c;
+  --brand-foreground: #ffffff;
+
+  --primary: #e8511e;
+  --primary-foreground: #ffffff;
+
+  --secondary: #1c1c20;
+  --secondary-foreground: #f5f5f4;
+
+  --muted: #1c1c20;
+  --muted-foreground: #a1a1aa;
+
+  --accent: #1c1c20;
+  --accent-foreground: #f5f5f4;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: #26262b;
+  --input: #26262b;
+  --ring: #e8511e;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-brand-foreground: var(--brand-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Brand gradient — reused on hero, bars, CTAs */
+  --gradient-brand: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Numbers/benchmarks/extensions read as precise in mono */
+  code, kbd, pre, samp {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--brand) 30%, transparent);
   }
 }
 
-body {
-  background: var(--background);
+@layer utilities {
+  .text-gradient-brand {
+    background: var(--gradient-brand);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-gradient-brand {
+    background: var(--gradient-brand);
+  }
+  /* Faint charcoal grid for hero / section backdrops */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--foreground) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--foreground) 5%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+}
+
+/* Shiki dual-theme: light is inline; flip to dark vars under `.dark`.
+   Backgrounds are neutralised so our own surface chrome shows through. */
+.shiki,
+.shiki span {
+  background-color: transparent !important;
+}
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark) !important;
+}
+
+/* Playground document view — lightweight prose for the engine's Markdown output. */
+.playground-doc {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+}
+.playground-doc h1,
+.playground-doc h2,
+.playground-doc h3,
+.playground-doc h4 {
+  font-weight: 600;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 1.2em 0 0.5em;
+  line-height: 1.25;
+}
+.playground-doc h1 { font-size: 1.4rem; }
+.playground-doc h2 { font-size: 1.2rem; }
+.playground-doc h3 { font-size: 1.05rem; }
+.playground-doc p { margin: 0.6em 0; }
+.playground-doc ul,
+.playground-doc ol { margin: 0.6em 0; padding-left: 1.4em; }
+.playground-doc ul { list-style: disc; }
+.playground-doc ol { list-style: decimal; }
+.playground-doc li { margin: 0.2em 0; }
+.playground-doc a { color: var(--brand); text-decoration: underline; }
+.playground-doc code {
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+.playground-doc pre {
+  background: var(--surface-2);
+  padding: 0.75em;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.7em 0;
+}
+.playground-doc pre code { background: transparent; padding: 0; }
+.playground-doc blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+  margin: 0.7em 0;
+}
+.playground-doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+  font-size: 0.85em;
+  display: block;
+  overflow-x: auto;
+}
+.playground-doc th,
+.playground-doc td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+.playground-doc th { background: var(--surface-2); font-weight: 600; }
+.playground-doc img { max-width: 100%; border-radius: 6px; margin: 0.5em 0; }
+.playground-doc hr { border: 0; border-top: 1px solid var(--border); margin: 1em 0; }
+
+/* docx-preview rendered document — keep authentic white pages, fit our panel. */
+.docx-host .docx-wrapper {
+  background: transparent;
+  padding: 1rem;
+  gap: 1rem;
+}
+.docx-host .docx-wrapper > section.docx {
+  margin: 0 auto 1rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* pptx-preview rendered slides — center + space them, keep authentic look.
+   NOTE: no `display` on .pptx-host itself, so Tailwind's `hidden` utility can
+   still toggle it (an unlayered `display` would override `.hidden`). */
+.pptx-host > * {
+  margin-left: auto;
+  margin-right: auto;
+}
+.pptx-host section,
+.pptx-host [class*="slide"] {
+  margin: 0 auto 14px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+}
+
+/* Respect reduced-motion globally (bar/scroll animations opt back in per-component) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

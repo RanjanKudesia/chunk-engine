@@ -1,0 +1,41 @@
+---
+title: structural (default)
+description: Element-level chunks — one per paragraph, heading, table, or list.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+`structural` produces one chunk per structural element: each heading, paragraph,
+table, and list becomes its own chunk. It's the finest-grained mode and the best
+choice when you want element-level control over indexing.
+
+```python
+from py_chunks import get_chunks
+
+chunks = get_chunks("report.docx", mode="structural")
+```
+
+## `default` vs `structural`
+
+For most formats, `default` is element-level chunking.
+
+- **DOCX**: `default` is normalized to `structural` — they're equivalent.
+- **PDF**: `default` and `structural` are **not** the same. `default` uses a
+  fast, lightweight path; `structural` uses the full, font-size-weighted layout
+  analysis. Use `structural` when heading detection matters.
+
+<Callout type="info">
+  If you're unsure, `default` is a safe starting point for every format.
+</Callout>
+
+## content_type values
+
+Chunks are typed by what they contain — common values include `heading`,
+`plain_paragraph`, `bullet_list`, `table`, and `code_block`. See the full list
+in the [Output Schema](/docs/output-schema).
+
+## When to use it
+
+- Fine-grained retrieval where each element should be independently searchable.
+- Downstream logic that re-groups elements itself.
+- Precise citations back to a single paragraph or table.
