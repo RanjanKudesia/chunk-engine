@@ -9,21 +9,39 @@ import { languageList } from "@/data/languages";
  * source `.mdx`, for the "Copy as Markdown" button and the `/md/*` raw
  * endpoints (LLM- and tool-friendly).
  *
- * The transform strips frontmatter/imports, expands `<LangCode id="…" />` into
- * real fenced code blocks (all three languages, pulled from data/samples), and
- * unwraps the doc-only JSX wrappers so the output is portable Markdown.
+ * The `content/docs` tree is read **once at module load** into a Map (a single
+ * fs pass over a fixed subfolder — no per-request dynamic fs), then each page's
+ * raw source is transformed on demand: frontmatter/imports stripped,
+ * `<LangCode id="…" />` expanded into real fenced code blocks (all three
+ * languages, from data/samples), and doc-only JSX wrappers unwrapped.
  */
 
 const DOCS_DIR = path.join(process.cwd(), "content", "docs");
 const FENCE: Record<string, string> = { py: "python", js: "ts", rs: "rust" };
 
-function resolveFile(slug: string[]): string | null {
+/** slug-key ("streaming.mdx", "framework-integration/python.mdx") -> raw mdx. */
+const RAW_BY_KEY: Map<string, string> = (() => {
+  const map = new Map<string, string>();
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".mdx")) {
+        map.set(path.relative(DOCS_DIR, full), fs.readFileSync(full, "utf8"));
+      }
+    }
+  };
+  try {
+    walk(DOCS_DIR);
+  } catch {
+    // build environments without the folder — leave the map empty
+  }
+  return map;
+})();
+
+function rawForSlug(slug: string[]): string | null {
   const base = slug.length ? slug.join("/") : "index";
-  const candidates = [
-    path.join(DOCS_DIR, `${base}.mdx`),
-    path.join(DOCS_DIR, base, "index.mdx"),
-  ];
-  return candidates.find((p) => fs.existsSync(p)) ?? null;
+  return RAW_BY_KEY.get(`${base}.mdx`) ?? RAW_BY_KEY.get(`${base}/index.mdx`) ?? null;
 }
 
 function expandLangCode(id: string): string {
@@ -43,12 +61,10 @@ export function getDocMarkdown(
   slug: string[] | undefined,
   meta: { title: string; description?: string }
 ): string | null {
-  const file = resolveFile(slug ?? []);
-  if (!file) return null;
+  const raw = rawForSlug(slug ?? []);
+  if (raw == null) return null;
 
-  let raw = fs.readFileSync(file, "utf8");
-
-  raw = raw
+  const body = raw
     // frontmatter
     .replace(/^---\n[\s\S]*?\n---\n/, "")
     // import lines
@@ -71,5 +87,5 @@ export function getDocMarkdown(
     .trim();
 
   const header = `# ${meta.title}\n\n${meta.description ? `${meta.description}\n\n` : ""}`;
-  return `${header}${raw}\n`;
+  return `${header}${body}\n`;
 }
