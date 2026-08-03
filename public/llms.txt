@@ -4,6 +4,8 @@
 
 chunk-engine is a document-understanding engine (not a plain text splitter): it reads 36 file formats natively and returns typed chunks (`content_type` = heading, table, code_block, bullet_list, plain_paragraph, …) each carrying format- and section-specific `metadata`. The parsing and chunking run in a compiled Rust core; thin bindings expose the same API — and produce the same output — from Python, JavaScript, or Rust.
 
+Every docs page is also available as raw Markdown at `/md/<path>` (e.g. https://www.chunkengine.dev/md/quick-start) — append the page's path under `/md/` to fetch a clean, code-expanded Markdown version.
+
 ## Install
 
 - Python: `pip install py-chunks` — https://pypi.org/project/py-chunks/
@@ -32,6 +34,7 @@ chunk-engine is a document-understanding engine (not a plain text splitter): it 
 - Chunking Modes: https://www.chunkengine.dev/docs/chunking-modes
 - Output Schema: https://www.chunkengine.dev/docs/output-schema
 - Supported Formats: https://www.chunkengine.dev/docs/supported-formats
+- Format Examples (real output: JSON, email, RTF, EPUB, notebooks, OpenDocument): https://www.chunkengine.dev/docs/format-examples
 - Streaming (support matrix + memory profiles): https://www.chunkengine.dev/docs/streaming
 - Recipes (RAG ingestion, batch, streaming): https://www.chunkengine.dev/docs/recipes
 - Framework Integration (Python, JavaScript, Rust — FastAPI, Flask, Django, Litestar, aiohttp, Celery, Express, Fastify, Hono, Next.js, NestJS, SvelteKit, Axum, Actix Web, Rocket, Warp): https://www.chunkengine.dev/docs/framework-integration

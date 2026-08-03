@@ -11,6 +11,7 @@
     "chunking-modes",
     "output-schema",
     "supported-formats",
+    "format-examples",
     "streaming",
     "framework-integration",
     "recipes",
