@@ -18,8 +18,13 @@ export const site = {
     "A fast, high-fidelity document chunking engine for RAG — 36 formats, one Rust core, with byte-identical bindings for Python, JavaScript, and Rust.",
 
   links: {
-    // Author profile — lists py-chunks / js-chunks / rs-chunks.
-    github: "https://github.com/RanjanKudesia",
+    /**
+     * The hub repo. Every "GitHub" call-to-action points here so stars and
+     * watchers collect in one place; it links out to the three SDK repos.
+     */
+    github: "https://github.com/RanjanKudesia/chunk-engine",
+    /** Author profile — used for authorship metadata (JSON-LD), not CTAs. */
+    author: "https://github.com/RanjanKudesia",
     docs: "/docs",
   },
 
