@@ -97,6 +97,27 @@ textual column a first cell whose length differs from the rest reads as a label.
 A single-row file is always treated as data, never as a lone header, so it still
 produces a chunk.
 
+## EPUB
+
+| Scope | Notable metadata keys |
+| --- | --- |
+| per chunk | `spine_index`, `href`, `is_navigation`, `document_metadata` |
+| `document_metadata` | `title`, `language`, `creator`, `identifier`, `epub_version`, `spine_count`, `toc`, plus the plural forms `creators`, `identifiers`, `publishers`, `contributors`, `subjects`, `languages` |
+
+Dublin Core elements are repeatable, and several fixtures use that — one has two
+authors, two publishers, two languages and eight contributors. The **plural**
+keys carry every value; the singular ones keep the first, so existing consumers
+are unaffected.
+
+`toc` is the book's own table of contents as `{title, href}` in reading order,
+read from `nav.xhtml` (EPUB 3) or `toc.ncx` (EPUB 2). It gives you chapter titles
+even when the XHTML uses no heading tags.
+
+`is_navigation` marks a chunk that came from the book's TOC page rather than its
+content — a link list chunks as ordinary prose otherwise and pollutes retrieval.
+EPUB 3 declares this with `properties="nav"`; EPUB 2 has no marker, so the
+filename convention is used as a fallback.
+
 ## Email (EML / MBOX / MSG)
 
 | Format | Notable metadata keys |
