@@ -75,8 +75,20 @@ Markdown, HTML, TXT).
 
 | Mode | `content_type` | Notable metadata keys |
 | --- | --- | --- |
-| `row` / `default` / `page_aware` | `row_group` | `row_start`, `row_end`, `row_count`, `col_count`, `header_row`, `delimiter_detected`, `encoding`, `chunk_index` |
-| `sliding_window` | `row_window` | `window_index`, `window_size`, `overlap`, `row_start`, `row_end`, `actual_row_count`, `col_count`, `header_row`, `delimiter_detected`, `encoding`, `chunk_index` |
+| `row` / `default` / `page_aware` | `row_group` | `row_start`, `row_end`, `row_count`, `col_count`, `header_row`, `has_header`, `delimiter_detected`, `encoding`, `chunk_index` |
+| `sliding_window` | `row_window` | `window_index`, `window_size`, `overlap`, `row_start`, `row_end`, `actual_row_count`, `col_count`, `header_row`, `has_header`, `delimiter_detected`, `encoding`, `chunk_index` |
+
+CSV has no way to declare whether its first row is a header, so the engine
+infers it: a non-numeric cell above a numeric column reads as a label, and in a
+textual column a first cell whose length differs from the rest reads as a label.
+
+- **`has_header: true`** — `header_row` came from the file, and that row is not
+  emitted as data.
+- **`has_header: false`** — the file is headerless. Every row is emitted as
+  data and `header_row` holds synthetic `Column 1 … Column N` labels.
+
+A single-row file is always treated as data, never as a lone header, so it still
+produces a chunk.
 
 ## Image chunks
 
