@@ -84,9 +84,17 @@ for path in paths:
 ## Scanned / image-only PDFs
 
 A PDF with no text layer (a scan, or pages rendered as images) can't be chunked
-as text — the text modes raise `RuntimeError: PDF appears to contain no
-extractable text`. The image path is the exception: `list_images=True` succeeds
-and returns **one image per page** instead of raising.
+as text — the text modes raise:
+
+```
+RuntimeError: PDF contains no extractable text (100 page(s) scanned or
+image-only). OCR is not enabled; pass list_images to get one rendered image
+per page.
+```
+
+The image path is the exception: `list_images=True` succeeds and returns **one
+rendered image per page** instead of raising. Pages are named `page_1.png`,
+`page_2.png`, … and rendered at the configured DPI.
 
 ```python
 try:
@@ -95,7 +103,15 @@ except RuntimeError:
     result = get_chunks("scanned.pdf", list_images=True)  # succeeds
     pages = [c for c in result.chunks if c["content_type"] == "image"]
     # → one PNG per page, ready for OCR downstream
+    result.images["page_1.png"]                  # bytes for the first page
 ```
+
+<Callout type="warn" title="Page renders are large">
+  Rendering is only used when there is no text to extract, and the rasters are
+  full-resolution PNGs — roughly 600 KB per A4 page, so a 100-page scan is
+  around 60 MB held in memory at once. A PDF that *does* have text is never
+  rasterised: it returns its own embedded images as usual.
+</Callout>
 
 ## Legacy `.doc` too old
 

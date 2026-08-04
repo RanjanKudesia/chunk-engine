@@ -98,8 +98,8 @@ A few behaviors are worth knowing before you rely on a format:
 - **PDF `default` vs `structural` differ** (they are not aliases): `default` uses
   a fast lightweight path, `structural` runs full font-size layout analysis. A
   scanned / image-only PDF (no text layer) raises for text modes but *succeeds*
-  under `list_images=True`, returning one image per page — see
-  [Error Handling](/docs/error-handling).
+  under `list_images=True`, returning one rendered `page_N.png` per page — see
+  [Error Handling](/docs/error-handling) for the size caveat.
 - **DOC / PPT (97–2003)** are parsed by a pure-Rust binary reader (no
   LibreOffice, no external process). Only Word 97+ `.doc` is supported —
   pre-Word 97 files raise. `.doc` `page_number` is always `null` (not present in
