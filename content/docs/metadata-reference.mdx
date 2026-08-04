@@ -71,6 +71,13 @@ Markdown, HTML, TXT).
   (`has_print_area: false`). Every other mode is identical to `.xlsx`.
 </Callout>
 
+<Callout type="info" title="skipped_sheets">
+  Every spreadsheet chunk carries `skipped_sheets` — the names of any sheets
+  calamine could not read (chart sheets, XLM macro sheets, corrupt parts). It is
+  an empty list when nothing was dropped, so its absence never has to be
+  interpreted. A workbook where *no* sheet is readable raises instead.
+</Callout>
+
 ## CSV / TSV
 
 | Mode | `content_type` | Notable metadata keys |
