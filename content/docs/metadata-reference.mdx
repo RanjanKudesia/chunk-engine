@@ -97,6 +97,22 @@ textual column a first cell whose length differs from the rest reads as a label.
 A single-row file is always treated as data, never as a lone header, so it still
 produces a chunk.
 
+## Email (EML / MBOX / MSG)
+
+| Format | Notable metadata keys |
+| --- | --- |
+| EML | `document_metadata`: `subject`, `from`, `to`, `cc`, `bcc`, `date`, `message_id`, `in_reply_to`, `references`, `has_attachments`, `attachment_count` |
+| MBOX | per-chunk: `message_index`, `message_subject`, `message_from`, `message_date`, `message_id`, `in_reply_to`, `references` — plus `document_metadata` (`source_type`, `message_count`) |
+| MSG | `document_metadata`: `message_class`, `subject`, `from`, `to`, `cc`, `bcc`, `sent_date`, `received_date`, `importance`, `conversation_topic`, `has_attachments`, `attachment_count` |
+
+`in_reply_to` and `references` are lists of message-ids, so a consumer can
+reconstruct a thread without re-parsing the source.
+
+An `.mbox` is many messages in one file, so its identity keys sit **on each
+chunk** rather than in `document_metadata` — "which message is this chunk from?"
+is a lookup, not a string-parse of `section_heading`. The mailbox title chunk
+that precedes the first message carries no `message_index`.
+
 ## OpenDocument (ODT / ODP)
 
 | Mode | Format | Notable metadata keys |
