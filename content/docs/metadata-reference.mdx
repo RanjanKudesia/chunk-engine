@@ -107,7 +107,7 @@ format-specific keys:
 | EML / MBOX | `image_name` — inline and attached images |
 | MSG | `image_name` — image attachments, detected by filename, MIME type, then magic bytes (Outlook often stores `application/octet-stream` for a real JPEG) |
 | ODT / ODP | `image_name` |
-| EPUB | `image_name` |
+| EPUB | `image_name`, `href` (the manifest path the image was referenced by) |
 | IPYNB | `image_name` |
 
 ## Enumerated values
