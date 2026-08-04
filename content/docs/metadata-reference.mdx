@@ -146,6 +146,25 @@ chunk from?" is a metadata lookup in both formats rather than a string-parse of
 `section_heading`. ODP has no title element the way PPTX does, so `slide_title`
 is the slide's first line of text — what a reader would call its title.
 
+## Rich text (RTF)
+
+RTF routes through the Markdown chunker, so it carries that family's per-mode
+keys (see [Document formats](#document-formats), the MD / HTML / TXT rows) plus:
+
+| Mode | Notable metadata keys |
+| --- | --- |
+| all modes | `document_metadata` (`source_type: "rtf"`, `title`, `author`) |
+
+`title` and `author` are read from the document's `\info` group. Both are `null`
+when absent — and deliberately `null` rather than a guess when the writer stored
+the value as a `\upr` pair, whose ANSI half is a lossy `?????` copy of the real
+one.
+
+Headings come from paragraph *styles*, not from inline markup, so `heading_path`
+and `section_level` are only populated for documents that carry a style sheet
+naming them; a converter that flattens styles yields prose chunks with no
+heading structure.
+
 ## Image chunks
 
 When `list_images` is on, each `content_type="image"` chunk carries

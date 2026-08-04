@@ -63,6 +63,45 @@ Headings and paragraphs, with correct decoding across the code pages RTF uses
 (cp1252 / Shift-JIS / etc.). A Japanese `.rtf` titled タイトル yields a `heading`
 chunk with the text intact — no mojibake.
 
+RTF has no inline heading markup: a heading is a paragraph whose style is named
+one in the document's style sheet. Those styles are read, so body headings
+become real `heading` chunks and build a `heading_path`:
+
+```text
+// .rtf with heading 1/2/3 styles
+[heading]   First paragraph
+[semantic]  FffLorem ipsum dolor sit amet, consectetur adipiscing elit. …
+[heading]   Second paragraph      heading_path: ["First paragraph", "Second paragraph"]
+```
+
+Documents written by a converter that discards the style sheet have nothing to
+detect, and get no headings rather than guessed ones.
+
+Character formatting survives into the markdown, and list markers are
+normalised — the glyph a writer painted for a bullet is only meaningful in its
+own symbol font, so the *kind* of marker is what is kept:
+
+```text
+**bold** ***italic*** *not bold*
+
+A short unordered list:
+- first
+- second
+
+A short ordered list:
+1. one
+2. two
+```
+
+`document_metadata` carries `source_type`, `title` and `author`, each read from
+the document's `\info` group:
+
+```text
+{ author: "Paolo Mottadelli", source_type: "rtf", title: null }
+```
+
+Underline has no markdown equivalent and is not represented.
+
 ## eBooks — EPUB
 
 Chunked per spine item (reading order), with richer provenance than most
