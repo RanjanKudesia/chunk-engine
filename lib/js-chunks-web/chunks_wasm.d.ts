@@ -140,6 +140,15 @@ export function getMarkdown(data: Uint8Array, filename: string): string;
  */
 export function getMarkdownWithImages(data: Uint8Array, filename: string): any;
 
+/**
+ * Apply the engine's PDF-markdown normalisation to host-parsed markdown.
+ *
+ * `chunkPdfMarkdown` already does this internally, so chunks agree across SDKs
+ * without any help. `getMarkdown` returns the host parser's string directly,
+ * which would otherwise skip it — this is what keeps the two in step.
+ */
+export function normalizePdfMarkdown(markdown: string): string;
+
 export function parse_rtf(rtf: string): RtfDocument;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -153,6 +162,7 @@ export interface InitOutput {
     readonly getChunksWithImages: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly getMarkdown: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly getMarkdownWithImages: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly normalizePdfMarkdown: (a: number, b: number) => [number, number];
     readonly __wbg_get_painter_bold: (a: number) => number;
     readonly __wbg_get_painter_color_ref: (a: number) => number;
     readonly __wbg_get_painter_font_ref: (a: number) => number;

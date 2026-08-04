@@ -8,6 +8,7 @@ export const getChunks: (a: number, b: number, c: number, d: number, e: number, 
 export const getChunksWithImages: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
 export const getMarkdown: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const getMarkdownWithImages: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const normalizePdfMarkdown: (a: number, b: number) => [number, number];
 export const __wbg_get_painter_bold: (a: number) => number;
 export const __wbg_get_painter_color_ref: (a: number) => number;
 export const __wbg_get_painter_font_ref: (a: number) => number;

@@ -33,8 +33,12 @@ npm install js-chunks
 
 <Callout type="info" title="PDF in JavaScript">
   PDF parsing uses the optional peer dependency
-  [`@llamaindex/liteparse-wasm`](https://www.npmjs.com/package/@llamaindex/liteparse-wasm)
-  (the same liteparse version as the Rust engine, so output is byte-identical).
+  [`@llamaindex/liteparse-wasm`](https://www.npmjs.com/package/@llamaindex/liteparse-wasm),
+  pinned to the same liteparse version as the Rust engine. Chunking, metadata
+  and the chunk schema are shared engine code and match exactly; the PDF→markdown
+  step is the one place where they can differ, because it runs in the WASM
+  package rather than in our engine. On our 22-document PDF corpus 19 match
+  byte-for-byte, and 3 differ in a heading level or an emphasis span.
   Install it to enable `.pdf` sources:
 
   ```bash
