@@ -90,6 +90,18 @@ textual column a first cell whose length differs from the rest reads as a label.
 A single-row file is always treated as data, never as a lone header, so it still
 produces a chunk.
 
+## OpenDocument (ODT / ODP)
+
+| Mode | Format | Notable metadata keys |
+| --- | --- | --- |
+| all modes | ODT | `section_heading`, `section_level`, `document_metadata` (`source_type: "odt"`, `title`, `creator`) |
+| all modes | ODP | `section_heading`, `section_level`, `slide_number`, `slide_title`, `document_metadata` (`source_type: "odp"`, `title`, `creator`, `slide_count`) |
+
+`slide_number` and `slide_title` mirror the PPTX keys, so "which slide is this
+chunk from?" is a metadata lookup in both formats rather than a string-parse of
+`section_heading`. ODP has no title element the way PPTX does, so `slide_title`
+is the slide's first line of text — what a reader would call its title.
+
 ## Image chunks
 
 When `list_images` is on, each `content_type="image"` chunk carries
