@@ -104,6 +104,11 @@ format-specific keys:
 | PDF | `page_number`, `image_name`, `document_metadata` (`source_type: "pdf"`, `total_pages`) — no `alt_text`; always re-encoded to `.png` |
 | DOC | `image_name`, `paragraph_index` (or `null` for floating/unanchored images) |
 | PPT | `image_name`, `page_number` (1-based slide, or `null` if it can't be safely attributed) |
+| EML / MBOX | `image_name` — inline and attached images |
+| MSG | `image_name` — image attachments, detected by filename, MIME type, then magic bytes (Outlook often stores `application/octet-stream` for a real JPEG) |
+| ODT / ODP | `image_name` |
+| EPUB | `image_name` |
+| IPYNB | `image_name` |
 
 ## Enumerated values
 
