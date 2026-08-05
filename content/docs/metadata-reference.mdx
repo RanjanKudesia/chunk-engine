@@ -189,8 +189,11 @@ format-specific keys:
 
 Two `semantic`-mode fields take a fixed set of values:
 
-- **DOCX `merge_reason`** — one of `heading_merge`, `keyword_overlap`,
-  `reference_continuity`, `short_paragraph`, `transition_break`.
+- **DOCX `merge_reason`** — one of `keyword_overlap`, `short_paragraph`,
+  `heading_merge`, `size_limit`, `reference_continuity`, `list_continuation`,
+  `docx_heading`, `transition_break`. (`list_continuation` marks a run of list
+  items held together as one unit; `size_limit` marks a chunk closed because
+  the next paragraph would exceed the 1,500-character cap.)
 - **MD / HTML / TXT / PPTX `primary_merge_reason`** — one of
   `reference_continuity`, `elaboration`, `example`, `cause_effect`,
   `contrast_continuation`, `question_answer`, `definition_expansion`,
