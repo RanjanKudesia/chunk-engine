@@ -95,8 +95,11 @@ batch-only — see [Streaming](/docs/streaming).
 
 A few behaviors are worth knowing before you rely on a format:
 
-- **PDF `default` vs `structural` differ** (they are not aliases): `default` uses
-  a fast lightweight path, `structural` runs full font-size layout analysis. A
+- **PDF `default` vs `structural` differ** (they are not aliases): `default`
+  ranks heading sizes within each page and holds one page at a time;
+  `structural` ranks across the whole document for a consistent hierarchy. Same
+  text, different heading calls — see
+  [structural](/docs/chunking-modes/structural). A
   scanned / image-only PDF (no text layer) raises for text modes but *succeeds*
   under `list_images=True`, returning one image per page — the page's own
   embedded scan where it has one, a render otherwise. See

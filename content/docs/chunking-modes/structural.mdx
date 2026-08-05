@@ -20,9 +20,19 @@ chunks = get_chunks("report.docx", mode="structural")
 For most formats, `default` is element-level chunking.
 
 - **DOCX**: `default` is normalized to `structural` — they're equivalent.
-- **PDF**: `default` and `structural` are **not** the same. `default` uses a
-  fast, lightweight path; `structural` uses the full, font-size-weighted layout
-  analysis. Use `structural` when heading detection matters.
+- **PDF**: `default` and `structural` are **not** the same, and the difference
+  is heading classification — the text is identical either way.
+  - `default` ranks type sizes **within each page**. No pass over the document,
+    so it holds one page at a time: on a 9,000-page PDF that is 630 MB instead
+    of 900 MB. It is not measurably faster — parsing the page content dominates,
+    not the ranking.
+  - `structural` ranks sizes **across the whole document**, giving one
+    consistent heading hierarchy. Use it when heading *levels* matter.
+
+  Neither is strictly better. Per-page ranking finds a title that appears once
+  in a long paper (which document-wide ranking discards as too rare to be
+  structure); document-wide ranking gives levels that mean the same thing on
+  every page.
 
 <Callout type="info">
   If you're unsure, `default` is a safe starting point for every format.
