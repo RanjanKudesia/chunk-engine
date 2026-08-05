@@ -171,6 +171,48 @@ and `section_level` are only populated for documents that carry a style sheet
 naming them; a converter that flattens styles yields prose chunks with no
 heading structure.
 
+## JSON / JSONL / NDJSON
+
+JSON routes through the Markdown chunker, so it carries that family's per-mode
+keys (see [Document formats](#document-formats), the MD / HTML / TXT rows) plus:
+
+| Mode | Notable metadata keys |
+| --- | --- |
+| all modes | `record_range`, `document_metadata` (`source_type`, `record_count`, `top_level`, `envelope_key`) |
+
+`record_range` is `[first, last]`, **inclusive and 0-based**, naming the source
+records a chunk was built from. It is the answer to "which products is this
+chunk about?" for a mode that groups several records into one chunk:
+
+```python
+from py_chunks import get_chunks
+
+for chunk in get_chunks("products.ndjson", mode="section"):
+    first, last = chunk["metadata"]["record_range"]
+    print(f"records {first}–{last}")        # records 0–12, then 13–24
+```
+
+- Element-level modes (`default`, `structural`, `sentence`) give one chunk per
+  record, so the range is a point: `[3, 3]`.
+- Grouping modes (`section`, `semantic`, `page_aware`) partition the file — the
+  ranges are contiguous and never overlap.
+- `sliding_window` ranges *do* overlap, by the window's overlap.
+
+The chunk's own record count is `last - first + 1`. There is deliberately no
+chunk-level `record_count` key: `document_metadata.record_count` already means
+the number of records in the **whole file**, and two different counts under one
+name is a trap.
+
+`top_level` is `"lines"` for `.jsonl`/`.ndjson`, and `"array"` or `"object"` for
+`.json`. `envelope_key` names the array a document was unwrapped from — for
+GeoJSON that is `"features"` — and is `null` when the document is itself the
+record set.
+
+<Callout type="info">
+  Only these three formats carry `record_range`. A chunk from a `.md`, `.pdf` or
+  `.docx` file has no records to point at and gains no key.
+</Callout>
+
 ## Image chunks
 
 When `list_images` is on, each `content_type="image"` chunk carries
