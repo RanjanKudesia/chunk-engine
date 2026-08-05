@@ -27,28 +27,34 @@ Markdown, HTML, TXT).
 | --- | --- | --- |
 | `default` / `structural` | PDF | `page_number`, `is_heading`, `avg_font_size` |
 | `default` / `structural` | DOCX | `section_heading`, `section_heading_level`, `footnotes` (list of `{id, text}`), `endnotes`, `page_number`, `document_metadata` (`header_text`, `footer_text`, `image_count`) |
-| `default` / `structural` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type` (`heading`/`normal`/`table`/`list_item`), `heading_level` (1–9 or null), `page_number` (always null — not in the binary format) |
+| `default` / `structural` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type` (`heading`/`normal`/`table`/`list_item`), `heading_level` (1–9 or null), `page_number` (1-based, from the hard page breaks the file declares; `null` when it declares none — Word does not store soft pagination) |
+| `default` / `structural` | PPT | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `slide_number`, `page_number` (same value as `slide_number`), `slide_title`, `document_metadata` (`source_type`, `total_slides`) |
 | `default` / `structural` | MD / HTML / TXT | `section_heading`, `document_metadata.source_type` |
 | `default` / `structural` | PPTX | `slide_number`, `section_heading` (when detectable) |
 | `section` | PDF | `page_number`, `section_heading`, `section_level`, `heading_path`, `paragraph_count`, `heading_font_size` |
 | `section` | DOCX | `section_heading`, `section_heading_level`, `section_level`, `heading_path`, `document_metadata` |
 | `section` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `section` | PPT | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `slide_number`, `page_number` (same value as `slide_number`), `slide_title`, `document_metadata` (`source_type`, `total_slides`) |
 | `section` | MD / HTML / TXT / PPTX | `section_heading`, `section_level`, `heading_path`, `paragraph_count` |
 | `semantic` | PDF | `page_number`, `paragraph_count`, `merge_reason` |
 | `semantic` | DOCX | `section_heading`, `section_heading_level`, `paragraph_count`, `merge_reason`, `document_metadata` |
 | `semantic` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `semantic` | PPT | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `slide_number`, `page_number` (same value as `slide_number`), `slide_title`, `document_metadata` (`source_type`, `total_slides`) |
 | `semantic` | MD / HTML / TXT / PPTX | `paragraph_count`, `merge_reasons` (list), `primary_merge_reason`, `keyword_density`, `avg_block_length` (MD/TXT), `section_heading`, `heading_path`, `chunk_index`, `document_metadata` |
 | `sentence` | PDF | `sentences_per_chunk`, `actual_sentence_count`, `chunk_index`, `source_paragraph_index` |
 | `sentence` | DOCX | `sentences_per_chunk`, `actual_sentence_count`, `chunk_index`, `source_paragraph_index`, `source_paragraph_is_heading`, `source_paragraph_heading_level`, `source_paragraph_is_list`, `source_paragraph_is_table`, `document_metadata` |
 | `sentence` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `sentence` | PPT | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `slide_number`, `page_number` (same value as `slide_number`), `slide_title`, `document_metadata` (`source_type`, `total_slides`) |
 | `sentence` | MD / HTML / TXT / PPTX | `sentences_per_chunk`, `actual_sentence_count`, `chunk_index`, `source_paragraph_index` |
 | `sliding_window` | PDF | `window_size`, `overlap`, `window_index`, `paragraph_count`, `paragraph_range`, `page_number` |
 | `sliding_window` | DOCX | `window_size`, `overlap`, `window_index`, `paragraph_indices`, `list_item_count`, `heading_count`, `paragraph_meta`, `document_metadata` |
 | `sliding_window` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `sliding_window` | PPT | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `slide_number`, `page_number` (same value as `slide_number`), `slide_title`, `document_metadata` (`source_type`, `total_slides`) |
 | `sliding_window` | MD / HTML / TXT / PPTX | `window_size`, `overlap`, `window_index`, `paragraph_count`, `paragraph_range` |
 | `page_aware` | PDF | `page_number`, `page_break_type`, `paragraph_count`, `document_metadata` |
 | `page_aware` | DOCX | `page_number`, `page_break_type`, `paragraph_count`, `section_heading_level`, `headings`, `list_item_count`, `table_count`, `document_metadata` |
 | `page_aware` | DOC | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `page_number` |
+| `page_aware` | PPT | `source`, `chunk_index`, `total_chunks`, `paragraph_type`, `heading_level`, `slide_number`, `page_number` (same value as `slide_number`), `slide_title`, `document_metadata` (`source_type`, `total_slides`) |
 | `page_aware` | MD / HTML / TXT | `page_number`, `page_break_type`, `paragraph_count` |
 | `page_aware` | PPTX | `slide_numbers`, `paragraph_count` |
 
