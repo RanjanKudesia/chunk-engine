@@ -216,7 +216,14 @@ record set.
 ## Image chunks
 
 When `list_images` is on, each `content_type="image"` chunk carries
-format-specific keys:
+format-specific keys.
+
+`image_name` is `"<16 hex>.<ext>"`, where the hex is a content hash (FNV-1a,
+64-bit) of the image's bytes. So the same picture gets the same name in every
+document it appears in, duplicates inside one document collapse to a single
+entry, and — because the hash is pinned rather than taken from the standard
+library — **the name is identical in Python, JavaScript and Rust**. The
+extension is the one the source document stored the image under.
 
 | Format | Image-chunk metadata keys |
 | --- | --- |
