@@ -143,8 +143,8 @@ This is exactly how the [Playground](/playground) works — chunking runs entire
 client-side in WASM, and the file never leaves the browser.
 
 <Callout type="info" title="PDF in JS">
-  `.pdf` sources need the optional peer dependency
-  `@llamaindex/liteparse-wasm`. If you already have PDF markdown, chunk it with
-  `chunkPdfMarkdown(markdown, totalPages)` — no peer dependency. See
+  `.pdf` works with no extra install — the engine parses PDF in WASM. If you
+  already have PDF markdown from another parser, chunk it with
+  `chunkPdfMarkdown(markdown, totalPages)`. See
   [Installation](/docs/installation#javascript--js-chunks).
 </Callout>

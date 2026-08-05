@@ -93,8 +93,13 @@ per page.
 ```
 
 The image path is the exception: `list_images=True` succeeds and returns **one
-rendered image per page** instead of raising. Pages are named `page_1.png`,
-`page_2.png`, … and rendered at the configured DPI.
+image per page** instead of raising.
+
+A scanned page is usually a single embedded image, and that image is returned
+as it is stored — named `image_p1_1.png`, `image_p2_1.png`, … after the page it
+sits on. Only a page with *no* embedded image is rasterised, and those renders
+are named `page_1.png`, `page_2.png`, … Rendering is native-only: in the browser
+there is no rasteriser, so such a PDF reports that it has no text.
 
 ```python
 try:
@@ -103,7 +108,7 @@ except RuntimeError:
     result = get_chunks("scanned.pdf", list_images=True)  # succeeds
     pages = [c for c in result.chunks if c["content_type"] == "image"]
     # → one PNG per page, ready for OCR downstream
-    result.images["page_1.png"]                  # bytes for the first page
+    result.images["image_p1_1.png"]              # bytes for the first page
 ```
 
 <Callout type="warn" title="Page renders are large">

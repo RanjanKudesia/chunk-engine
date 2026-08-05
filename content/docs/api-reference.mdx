@@ -69,8 +69,8 @@ or `Blob`. WASM is instantiated lazily and cached on first call.
 
 <Callout type="info">
   `contentType` is camelCase here (the WASM core emits `content_type`).
-  `chunkPdfMarkdown` lets you chunk PDF markdown you already have, without the
-  `@llamaindex/liteparse-wasm` peer dependency.
+  `.pdf` sources are parsed by the engine itself; `chunkPdfMarkdown` is for
+  markdown you already have from some other parser.
 </Callout>
 
 ## Rust — rs-chunks

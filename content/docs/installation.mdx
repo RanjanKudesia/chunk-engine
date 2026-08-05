@@ -14,7 +14,9 @@ page.
 
 - **Python 3.9+**. The Rust engine ships compiled inside the wheel.
 - One runtime dependency: [`pypdfium2`](https://pypi.org/project/pypdfium2/)
-  (installed automatically; bundles PDFium for PDF support).
+  (installed automatically). PDF *parsing* is pure Rust inside the wheel;
+  PDFium is used only to rasterise a scanned PDF's pages when it carries no
+  embedded page images of its own.
 
 ```bash
 pip install py-chunks
@@ -32,21 +34,17 @@ npm install js-chunks
 ```
 
 <Callout type="info" title="PDF in JavaScript">
-  PDF parsing uses the optional peer dependency
-  [`@llamaindex/liteparse-wasm`](https://www.npmjs.com/package/@llamaindex/liteparse-wasm),
-  pinned to the same liteparse version as the Rust engine. Chunking, metadata
-  and the chunk schema are shared engine code and match exactly; the PDF→markdown
-  step is the one place where they can differ, because it runs in the WASM
-  package rather than in our engine. On our 22-document PDF corpus 19 match
-  byte-for-byte, and 3 differ in a heading level or an emphasis span.
-  Install it to enable `.pdf` sources:
+  `.pdf` works out of the box — no peer dependency. PDF is parsed by the engine
+  itself, compiled to WASM, so JavaScript reads a PDF with exactly the code
+  Python and Rust run. Measured over our 24-document PDF corpus: markdown,
+  chunks and image bytes are **identical on 23 of 24**.
 
-  ```bash
-  npm install @llamaindex/liteparse-wasm
-  ```
+  The 24th is the one thing WASM cannot do — *render* a page. A scanned PDF with
+  no text and no embedded page image falls back to page rasters in Python and
+  Rust, and reports "no extractable text" in JavaScript.
 
   If you already have PDF markdown from another parser, chunk it directly with
-  `chunkPdfMarkdown(markdown, totalPages, opts?)` — no peer dependency needed.
+  `chunkPdfMarkdown(markdown, totalPages, opts?)`.
 </Callout>
 
 ## Rust — rs-chunks
@@ -63,9 +61,12 @@ use chunks_rs::{get_chunks, get_markdown};
 ```
 
 <Callout type="info" title="PDF feature flag">
-  Native PDF (via the `liteparse` crate / PDFium) is on by default through the
-  `pdf-native` feature. Disable default features for `wasm32` targets, where PDF
-  markdown is produced host-side and fed to `pdf::chunk_pdf_markdown`.
+  PDF parsing is always compiled in and needs no feature flag — it is pure Rust
+  and builds for `wasm32`. The default `pdf-native` feature adds only page
+  *rasterisation* (via the `liteparse` crate / PDFium), the fallback for a
+  scanned PDF that has no embedded page image. Disable default features for
+  `wasm32` targets; PDFs still parse, and a text-less one reports that it has no
+  text instead of returning page renders.
 </Callout>
 
 ## Verify
