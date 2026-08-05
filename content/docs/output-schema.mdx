@@ -30,6 +30,22 @@ that **JavaScript exposes `contentType` (camelCase)** while Python and Rust use
 
 <LangCode id="outputAccess" />
 
+## Chunk size
+
+Chunks target a maximum of **1,200 characters**. Two things widen that, both
+deliberately:
+
+- A chunk may reach **1,550** characters when a short trailing paragraph is
+  merged into it rather than emitted as an orphan fragment.
+- **Indivisible units are never split**, however long they are: a table (see
+  `table` below — "kept whole"), a CSV/TSV row, a spreadsheet row, and a
+  rendered JSON record. Splitting one destroys the thing it represents, so the
+  bound gives way instead. A wide spreadsheet row or a large table can
+  therefore produce a chunk well past 1,550.
+
+Everything else — prose, lists, headings — is bounded: an over-long paragraph is
+cut at a sentence, and a sentence with no boundary at all is cut at a word.
+
 ## content_type values
 
 The `content_type` tells you what a chunk is. Prose and markup formats emit:
