@@ -62,7 +62,7 @@ closest Markdown construct rather than dumping plain text.
 | Format | Markdown output |
 | --- | --- |
 | `.docx` | Full fidelity: headings (`#`–`######` from Word heading styles / outline levels), unordered (`- item`) and ordered (`1. item`) lists with per-level indentation, pipe tables, fenced code blocks, hyperlinks as `[text](url)`, page/section breaks as `---`, footnotes/endnotes as `[^id]: text` appended at the end. |
-| `.doc` | H1 → `#`, H2–H3 → `##`, H4+ → `###`; lists → `- item`; each table paragraph → a pipe row with a `\| --- \|` separator; page breaks → `---`. |
+| `.doc` | H1 → `#`, H2–H3 → `##`, H4+ → `###` (levels come from the file's own paragraph styles); lists → `- item`, indented two spaces per nesting level; tables → one pipe table per table, rows padded to the widest and a single `\| --- \|` separator after the header row; page breaks → `---`. Footnotes, headers, comments, endnotes and text boxes are appended under a `# [Label]` heading each. |
 | `.pptx` | Presentation title → `# Title`; PPTX sections → `# Section`; each slide → `## Slide N: Title`; bullets (`- item` / `1. item`) with indentation; pipe tables; speaker notes as `> **Notes:** …`; slides/sections split by `---`. |
 | `.ppt` | Slide titles → `##`; body placeholders → `- item` bullets (multi-line) or prose; freeform text boxes included; slides split by `---`. |
 | `.pdf` | Headings inferred from font size vs document average → `#` / `##` / `###`; bullet lists normalized to `- item`; tab/space-aligned tables → pipe tables; page boundaries → `---`. |
@@ -106,8 +106,12 @@ A few behaviors are worth knowing before you rely on a format:
   [Error Handling](/docs/error-handling) for the naming and the size caveat.
 - **DOC / PPT (97–2003)** are parsed by a pure-Rust binary reader (no
   LibreOffice, no external process). Only Word 97+ `.doc` is supported —
-  pre-Word 97 files raise. `.doc` `page_number` is always `null` (not present in
-  the binary format); DOC table cells are joined with ` | `.
+  pre-Word 97 files raise. `.doc` chunks carry the same structural metadata
+  `.docx` does — `section_heading`, `heading_path`, `list_level` and
+  `table_rows`/`table_columns`/`table_cells` — read from the file's own
+  paragraph properties. `.doc` `page_number` counts the **hard** page breaks the
+  file declares and is `null` when it declares none: Word recomputes soft
+  pagination at render time and does not store it.
 - **PPT** reads slides from the presentation's slide list in order; **speaker
   notes and master text are excluded**, and slides are separated by `---`.
 - **XLS vs XLSX**: `.xls` cannot expose named tables or print areas, so `table`
