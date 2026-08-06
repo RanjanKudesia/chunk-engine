@@ -13,10 +13,10 @@ page.
 ## Python — py-chunks
 
 - **Python 3.9+**. The Rust engine ships compiled inside the wheel.
-- One runtime dependency: [`pypdfium2`](https://pypi.org/project/pypdfium2/)
-  (installed automatically). PDF *parsing* is pure Rust inside the wheel;
-  PDFium is used only to rasterise a scanned PDF's pages when it carries no
-  embedded page images of its own.
+- **No runtime dependencies.** PDF *parsing* is pure Rust inside the wheel, and
+  PDFium — needed only to rasterise a scanned PDF's pages when it carries no
+  embedded page image of its own — is vendored into the same wheel. `pip install
+  py-chunks` pulls nothing else.
 
 ```bash
 pip install py-chunks

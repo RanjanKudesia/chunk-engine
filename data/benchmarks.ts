@@ -13,6 +13,11 @@
 
 export const BENCHMARK_ENV = {
   date: "2026-07-28",
+  // Format coverage (§1) was re-measured on 2026-08-06 after the XLSB
+  // whole-workbook fix; every other section still dates from 2026-07-28 and is
+  // scheduled for a full re-run. Stated rather than blended, so no number here
+  // is attributed to a run it did not come from.
+  coverageDate: "2026-08-06",
   corpus: "446 real files · all 36 formats · 3 runs/file (median)",
   machine: "Apple M1 Max · 10 cores (8P+2E) · 32 GB",
   os: "macOS 26.5.1",
@@ -32,10 +37,14 @@ export interface CoverageRow {
 export const formatCoverage = {
   of: 36,
   rows: [
-    { tool: "chunk-engine", value: 35, highlight: true },
+    { tool: "chunk-engine", value: 36, highlight: true },
     { tool: "markitdown", value: 26 },
     { tool: "unstructured", value: 21 },
-    { tool: "docling", value: 18 },
+    {
+      tool: "docling",
+      value: 17,
+      note: "18 in the 2026-07-28 run; the .txt representative is now a cp1252-encoded file docling cannot open, so this is a corpus change rather than a regression on their side",
+    },
     { tool: "text-splitters", value: 0, note: "read no files directly" },
   ] as CoverageRow[],
 };
@@ -125,7 +134,7 @@ export interface ScoreRow {
   detail: string;
 }
 export const scorecard: ScoreRow[] = [
-  { axis: "Format coverage", winner: "py", detail: "35/36 vs 18–26; text-splitters 0/36" },
+  { axis: "Format coverage", winner: "py", detail: "36/36 vs 17–26; text-splitters 0/36" },
   { axis: "Structure integrity (oversized units)", winner: "py", detail: "only tool that keeps any whole — competitors 0%" },
   { axis: "Content-type precision (table / code)", winner: "py", detail: "1.0 / 1.0 vs 0.14–0.85" },
   { axis: "Content-type recall (heading / list)", winner: "Docling", detail: "chunk-engine retains ~99% of content but under-labels at anchor level" },
@@ -138,8 +147,6 @@ export const scorecard: ScoreRow[] = [
 
 /* ---- Honestly-disclosed limitations (§ known limitations) ---- */
 export const knownLimitations = [
-  "35/36 formats, not 36: XLSB workbooks containing a chart sheet fail to parse (a calamine reader bug).",
-  "HIGH severity, found by this benchmark: literal “&” is silently dropped from DOCX/PPTX text (“R&D” → “R D”) — a fix is pending, not yet released.",
   "Page-number metadata population (0.585) trails Docling/Unstructured (0.67–0.77) on page-aware formats — offset by far richer per-format metadata schemas.",
   "On headings/lists chunk-engine under-labels at anchor granularity (but retains ~99% of the content) — it favours higher-value typed units.",
   "All numbers are Apple Silicon (M1 Max) and not cross-machine comparable; a neutral x86 cloud run is planned.",
