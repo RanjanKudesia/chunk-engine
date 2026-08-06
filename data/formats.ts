@@ -2,11 +2,20 @@
  * Supported formats — extension list derived from the library source
  * (`py_chunks/chunkers/` + README "Supported Formats", v0.5.0).
  *
- * HONESTY RULE (see NEEDS-REVIEW.md): `stable` = confirmed in the published
- * PyPI wheel's description. `new` = present in the library source / latest
- * builds but NOT yet confirmed in the current `pip install` — the footnote in
- * <FormatGrid> says exactly this. Nothing here claims an unpublished format
- * works in today's wheel.
+ * HONESTY RULE (see NEEDS-REVIEW.md): `stable` = covered by the published PyPI
+ * wheel's own per-format documentation. `new` = supported by the engine but not
+ * yet written up there in detail.
+ *
+ * Audited 2026-08-06 (TECH_DEBT B2). All 36 extensions listed here dispatch in
+ * `rs-chunks/src/dispatch.rs` and chunk a real fixture — the site does not claim
+ * a format works that does not. The split is therefore an *under*-claim, which
+ * is the safe direction, and it is left in place deliberately: confirming what
+ * the published v0.5.0 wheel does would take installing it from PyPI, and a
+ * local `maturin develop` build is not evidence about a published artifact.
+ * Promoting the remaining 24 to `stable` is a release decision, not a code one.
+ *
+ * The `soon` status below is unused by every entry — no format on this site is
+ * marked "Coming soon" — and is kept only because the type is exported.
  */
 export type FormatStatus = "stable" | "new" | "soon";
 

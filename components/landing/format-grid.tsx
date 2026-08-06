@@ -70,11 +70,11 @@ export function FormatGrid() {
       </div>
 
       <p className="mx-auto mt-8 max-w-2xl text-center text-xs text-muted-foreground">
-        <span className="text-brand">New</span> formats live in the library
-        source and latest builds; the current published wheel documents a
-        subset. Upgrade with{" "}
-        <code className="font-mono text-foreground">pip install -U py-chunks</code>{" "}
-        to pick up the newest formats.
+        Every format listed here is supported by the engine. A{" "}
+        <span className="text-brand">New</span> badge means the published
+        wheel&rsquo;s per-format documentation does not yet cover it in
+        detail &mdash; not that it is missing from{" "}
+        <code className="font-mono text-foreground">pip install py-chunks</code>.
       </p>
     </div>
   );
