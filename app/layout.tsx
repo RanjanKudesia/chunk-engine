@@ -102,7 +102,7 @@ const jsonLd = {
       operatingSystem: "Cross-platform (Python, Node.js, browser, Rust)",
       description: site.description,
       url: SITE_URL,
-      softwareVersion: "0.5.0",
+      softwareVersion: "0.6.0",
       programmingLanguage: languageList.map((l) => l.label),
       downloadUrl: languageList.map((l) => l.registryUrl),
       license: "https://opensource.org/licenses/MIT",

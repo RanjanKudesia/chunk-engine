@@ -1,6 +1,6 @@
 /**
  * Supported formats — extension list derived from the library source
- * (`py_chunks/chunkers/` + README "Supported Formats", v0.5.0).
+ * (`py_chunks/chunkers/` + README "Supported Formats", v0.6.0).
  *
  * HONESTY RULE (see NEEDS-REVIEW.md): `stable` = covered by the published PyPI
  * wheel's own per-format documentation. `new` = supported by the engine but not
@@ -10,7 +10,7 @@
  * `rs-chunks/src/dispatch.rs` and chunk a real fixture — the site does not claim
  * a format works that does not. The split is therefore an *under*-claim, which
  * is the safe direction, and it is left in place deliberately: confirming what
- * the published v0.5.0 wheel does would take installing it from PyPI, and a
+ * the published v0.6.0 wheel does would take installing it from PyPI, and a
  * local `maturin develop` build is not evidence about a published artifact.
  * Promoting the remaining 24 to `stable` is a release decision, not a code one.
  *

@@ -6,7 +6,7 @@
  * py_chunks is a document-understanding engine, benchmarked against its real
  * peers (Docling, Unstructured) — NOT positioned as a text-splitter vs LangChain.
  *
- * Measured via py-chunks 0.5.0; the engine (and its rs-chunks / js-chunks
+ * Measured via py-chunks 0.6.0; the engine (and its rs-chunks / js-chunks
  * bindings) is byte-identical, so coverage / structure / content-type results
  * apply to all three. Speed is the Rust core's, measured through the Python API.
  */
@@ -24,7 +24,7 @@ export const BENCHMARK_ENV = {
   machine: "Apple M1 Max · 10 cores (8P+2E) · 32 GB",
   os: "macOS 26.5.1",
   runtimes:
-    "py-chunks 0.5.0 · docling 2.115.0 · unstructured 0.24.1 · markitdown 0.1.5",
+    "py-chunks 0.6.0 · docling 2.115.0 · unstructured 0.24.1 · markitdown 0.1.5",
   caveat:
     "Apple-Silicon numbers — compare tools within this run, not across machines. A neutral x86 cloud run is a planned follow-up.",
 };
@@ -219,4 +219,4 @@ export const benchmarks: BenchmarkGroup[] = [
 
 // Shown near the landing bars — a measured-run note (no longer a placeholder).
 export const BENCHMARK_DISCLAIMER =
-  "Measured over 473 files on Apple M1 Max (py-chunks 0.5.0), 2026-08-06. See the benchmarks page for full methodology.";
+  "Measured over 473 files on Apple M1 Max (py-chunks 0.6.0), 2026-08-06. See the benchmarks page for full methodology.";

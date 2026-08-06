@@ -5,15 +5,98 @@ description: Release history for py-chunks, reconstructed from git tags and comm
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Current versions: **py-chunks 0.5.0**, **js-chunks 0.1.0**, **rs-chunks 0.1.0**.
+Current versions: **py-chunks 0.6.0**, **js-chunks 0.6.0**, **rs-chunks 0.6.0**.
 
 <Callout type="info">
-  The history below tracks **py-chunks** (the longest-running package), from
-  which the shared engine grew. `rs-chunks` (the standalone Rust engine) and
-  `js-chunks` (the WASM binding) were extracted from that engine and published at
-  `0.1.0`. No package ships a `CHANGELOG` file; this is reconstructed from git
-  tags and commit messages.
+  **From 0.6.0 the three packages share one version number.** They are one engine
+  with three bindings and are released together, so `py-chunks`, `js-chunks` and
+  `rs-chunks` now move in lockstep — `js-chunks` and `rs-chunks` jump from `0.1.0`
+  to `0.6.0` to join `py-chunks`, not because 5 releases happened in between.
+  History before 0.6.0 tracks **py-chunks**, the longest-running package, from
+  which the shared engine grew. No package ships a `CHANGELOG` file; this is
+  reconstructed from git tags and commit messages.
 </Callout>
+
+## 0.6.0
+
+The largest correctness release so far: **64 engine changes** closing every
+defect in the tracker. Chunk *content* changes for most formats, almost always
+because more text is now extracted or because it is laid out correctly.
+
+<Callout type="warn">
+  **Re-index after upgrading.** Extraction improved across PDF, `.doc`, `.txt`,
+  `.md`, email and OpenDocument, so chunk text and boundaries differ from 0.5.0.
+  Embeddings generated with an earlier version will not match text produced by
+  this one.
+</Callout>
+
+**Behaviour changes worth knowing before you upgrade**
+
+- **Oversized blocks are now bounded in every mode.** A table, list or code block
+  larger than the chunk budget used to come back as a single chunk; it is now
+  split at row, item or line boundaries — never mid-row. A single 11k-token chunk
+  broke the size contract downstream embedding models depend on.
+- **Image names are identical across the three SDKs.** They were not before: the
+  content hash included a native-width length prefix, so JavaScript produced
+  different names from Python and Rust for every format. JS names change with
+  this release.
+- **`py-chunks` has no runtime dependencies.** `pypdfium2` is gone from the
+  install; PDFium is vendored in the wheel.
+- Error types and messages were made consistent across bindings and modes, so
+  code matching on exact strings may need updating.
+
+**PDF** — the parser is now this project's own (`lopdf` object model, our layout
+engine, WebAssembly-clean) rather than a third-party pipeline.
+
+- Standard-14 font metrics shipped: fonts that declare no `/Widths` no longer
+  advance every glyph half an em, which had interleaved adjacent text runs
+  (`Science, University of Oxford` → `ScieUnnciev,ersity of Oxford`).
+- Subset fonts naming glyphs by index (`/g18`) now decode — one 24-page paper
+  went from 7,921 to 46,990 extracted characters.
+- Genuine two-column pages are split into columns and read down them; tables and
+  bylines are told apart from columns and kept intact.
+- Author blocks read down the column instead of across, so each author keeps
+  their own affiliation and email.
+- `default` streams incrementally: the first chunk of a 5,000-page document costs
+  fewer than 10 pages instead of a full parse.
+- Ligatures are spelled out (`classiﬁcation` → `classification`) so words stay
+  searchable, and hyperlink targets become Markdown links.
+
+**Legacy `.doc` / `.ppt`** — two offset bugs were corrupting the start and end of
+virtually every real `.doc`, and a third meant **no `.doc` ever had paragraph
+properties**, which silently disabled table, list, page-break and style
+detection. All are fixed, and `.doc` now reports tables, list depth and section
+breadcrumbs. Footnotes, headers, annotations, endnotes and text boxes are
+extracted; page and slide provenance reaches every mode.
+
+**Encoding and text**
+
+- `.txt` encoding is detected rather than assumed: UTF-16 via BOM and a NUL
+  sniff, cp1252 as the 8-bit fallback, every BOM stripped.
+- Line endings are normalised once at decode — CRLF documents used to come back
+  as one unsplit chunk, which affected every Windows-authored `.txt` and `.md`.
+- Literal `&` is no longer dropped from DOCX and PPTX text (`R&D` → `R D`), and
+  every named entity is decoded across HTML, XML and OpenDocument.
+
+**Spreadsheets** — an unreadable sheet no longer aborts the workbook, workbooks
+that `calamine` rejects are repaired before reading, XLSX streams for real, and
+skipped sheets are named in the metadata.
+
+**Email, eBooks, notebooks, OpenDocument**
+
+- `.eml`/`.mbox`: text attachments inlined, threading headers surfaced, per-message
+  identity on every mbox chunk, and the declared charset verified rather than
+  trusted.
+- `.msg`: image attachments extracted, Exchange legacyDNs no longer formatted as
+  email addresses, and non-Latin RTF bodies no longer lost.
+- `.epub`: repeated metadata kept, the native TOC parsed, navigation pages flagged.
+- `.ipynb`: images emit a placeholder in every mode, the richest output MIME wins.
+- `.odt`/`.odp`: numbered lists stay numbered, slides carry the identity `.pptx`
+  chunks already had, images are referenced and deduped.
+
+**Metadata** — JSON chunks name the records they were built from
+(`record_range`), and the metadata reference documents every key per format and
+mode.
 
 ## 0.5.0
 
