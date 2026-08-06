@@ -4,46 +4,53 @@
 
 chunk-engine is a document-understanding engine (not a plain text splitter): it reads 36 file formats natively and returns typed chunks (`content_type` = heading, table, code_block, bullet_list, plain_paragraph, …) each carrying format- and section-specific `metadata`. The parsing and chunking run in a compiled Rust core; thin bindings expose the same API — and produce the same output — from Python, JavaScript, or Rust.
 
-Every docs page is also available as raw Markdown at `/md/<path>` (e.g. https://www.chunkengine.dev/md/quick-start) — append the page's path under `/md/` to fetch a clean, code-expanded Markdown version.
+Install: `pip install py-chunks` · `npm install js-chunks` · `cargo add rs-chunks`.
 
-## Install
+Core API: `get_chunks(source, mode=...)` / `getChunks(source, { mode })` returns a list of `{ content, content_type, metadata }`; `stream_chunks(...)` / `streamChunks(...)` yields them lazily with constant memory; `get_markdown(...)` / `getMarkdown(...)` converts any document to a Markdown string; images come out via `list_images` / `listImages`.
 
-- Python: `pip install py-chunks` — https://pypi.org/project/py-chunks/
-- JavaScript: `npm install js-chunks` — https://www.npmjs.com/package/js-chunks
-- Rust: `cargo add rs-chunks` — https://crates.io/crates/rs-chunks
+Modes: document formats (DOCX, PDF, PPTX, HTML, Markdown, TXT, email, eBooks, notebooks) support `default`, `structural`, `section`, `semantic`, `sliding_window`, `sentence` and `page_aware`; spreadsheets (XLSX, XLS, ODS) support `row`, `table`, `sheet`, `sliding_window`, `page_aware` and `semantic`; delimited files (CSV, TSV) support `row`, `sliding_window` and `page_aware`.
 
-## Core API
+Every link below points at the raw Markdown of a page. The human-readable HTML lives at the same path under `/docs/` instead of `/md/` — for example <https://www.chunkengine.dev/md/quick-start> renders at <https://www.chunkengine.dev/docs/quick-start>.
 
-- `get_chunks(source, mode=...)` / `getChunks(source, { mode })` — batch chunk any supported document into a list of `{ content, content_type, metadata }`.
-- `stream_chunks(...)` / `streamChunks(...)` — yield chunks lazily with constant memory.
-- `get_markdown(...)` / `getMarkdown(...)` — convert any document to a Markdown string.
-- Image extraction via `list_images` / `listImages`.
+## Getting started
+
+- [Introduction](https://www.chunkengine.dev/md/index): what chunk-engine is, and how it differs from a text splitter.
+- [Installation](https://www.chunkengine.dev/md/installation): install for Python, JavaScript or Rust; no runtime dependencies.
+- [Quick Start](https://www.chunkengine.dev/md/quick-start): chunk a document, stream a large one, convert to Markdown.
+- [Input Sources](https://www.chunkengine.dev/md/input-sources): file path, raw bytes, file-like object, upload, presigned URL.
+- [Languages & parity](https://www.chunkengine.dev/md/languages): why the three SDKs return byte-identical output.
 
 ## Chunking modes
 
-- Document formats (DOCX, PDF, PPTX, HTML, Markdown, TXT, email, eBooks, notebooks): `default`, `structural`, `section`, `semantic`, `sliding_window`, `sentence`, `page_aware`.
-- Spreadsheets (XLSX, XLS, ODS): `row`, `table`, `sheet`, `sliding_window`, `page_aware`, `semantic`.
-- Delimited (CSV, TSV): `row`, `sliding_window`, `page_aware`.
+- [Chunking Modes overview](https://www.chunkengine.dev/md/chunking-modes): which modes exist and which formats support them.
+- [structural](https://www.chunkengine.dev/md/chunking-modes/structural): the default — one chunk per structural block.
+- [section](https://www.chunkengine.dev/md/chunking-modes/section): group blocks under their heading.
+- [semantic](https://www.chunkengine.dev/md/chunking-modes/semantic): merge related blocks up to a size budget.
+- [sentence](https://www.chunkengine.dev/md/chunking-modes/sentence): fixed number of sentences per chunk.
+- [sliding_window](https://www.chunkengine.dev/md/chunking-modes/sliding-window): overlapping windows for recall.
+- [page_aware](https://www.chunkengine.dev/md/chunking-modes/page-aware): respect page and slide boundaries.
 
-## Docs
+## Reference
 
-- Introduction: https://www.chunkengine.dev/docs
-- Installation: https://www.chunkengine.dev/docs/installation
-- Quick Start: https://www.chunkengine.dev/docs/quick-start
-- Languages & parity: https://www.chunkengine.dev/docs/languages
-- Chunking Modes: https://www.chunkengine.dev/docs/chunking-modes
-- Output Schema: https://www.chunkengine.dev/docs/output-schema
-- Supported Formats: https://www.chunkengine.dev/docs/supported-formats
-- Format Examples (real output: JSON, email, RTF, EPUB, notebooks, OpenDocument): https://www.chunkengine.dev/docs/format-examples
-- Streaming (support matrix + memory profiles): https://www.chunkengine.dev/docs/streaming
-- Recipes (RAG ingestion, batch, streaming): https://www.chunkengine.dev/docs/recipes
-- Framework Integration (Python, JavaScript, Rust — FastAPI, Flask, Django, Litestar, aiohttp, Celery, Express, Fastify, Hono, Next.js, NestJS, SvelteKit, Axum, Actix Web, Rocket, Warp): https://www.chunkengine.dev/docs/framework-integration
-- API Reference: https://www.chunkengine.dev/docs/api-reference
-- Metadata Reference (keys per format & mode): https://www.chunkengine.dev/docs/metadata-reference
-- Architecture: https://www.chunkengine.dev/docs/architecture
+- [Output Schema](https://www.chunkengine.dev/md/output-schema): the chunk shape and every `content_type` value.
+- [Metadata Reference](https://www.chunkengine.dev/md/metadata-reference): every metadata key, per format and per mode.
+- [API Reference](https://www.chunkengine.dev/md/api-reference): full signatures for all three SDKs.
+- [Supported Formats](https://www.chunkengine.dev/md/supported-formats): the 36 extensions and what each yields.
+- [Streaming](https://www.chunkengine.dev/md/streaming): which modes stream, and the memory profile of each format.
+- [Error Handling](https://www.chunkengine.dev/md/error-handling): the exceptions each SDK raises and when.
 
-## Other
+## Guides
 
-- Benchmarks (measured vs Docling & Unstructured): https://www.chunkengine.dev/benchmarks
-- Playground (chunk a document live in your browser): https://www.chunkengine.dev/playground
-- Source: https://github.com/RanjanKudesia
+- [Recipes](https://www.chunkengine.dev/md/recipes): RAG ingestion, batch processing, streaming into a vector store.
+- [Format Examples](https://www.chunkengine.dev/md/format-examples): real output for JSON, email, RTF, EPUB, notebooks, OpenDocument.
+- [Framework Integration](https://www.chunkengine.dev/md/framework-integration): FastAPI, Flask, Django, Celery, Express, Hono, Next.js, Axum and more.
+
+## Optional
+
+- [Architecture](https://www.chunkengine.dev/md/architecture): how the Python/JS API reaches the Rust engine.
+- [Benchmarks](https://www.chunkengine.dev/benchmarks): measured against Docling and Unstructured on 473 real files.
+- [Playground](https://www.chunkengine.dev/playground): chunk a document in the browser via WebAssembly.
+- [Changelog](https://www.chunkengine.dev/md/changelog): release history.
+- [py-chunks on PyPI](https://pypi.org/project/py-chunks/): the Python package.
+- [js-chunks on npm](https://www.npmjs.com/package/js-chunks): the JavaScript/WASM package.
+- [rs-chunks on crates.io](https://crates.io/crates/rs-chunks): the Rust engine.

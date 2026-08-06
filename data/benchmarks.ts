@@ -71,14 +71,20 @@ export const structureIntegrity = {
   ] as { tool: string; vals: number[]; highlight?: boolean }[],
 };
 
-/* Atomic rows / list items / code lines cut in half across the same trials —
-   unrecoverable damage, and the axis that does still separate the tools.
-   Lower is better; 0 is the only good answer. */
+/* Atomic rows / list items / code lines cut in half — unrecoverable damage, and
+   the axis that does still separate the tools. Lower is better; 0 is the only
+   good answer.
+
+   `units` is a SUM over trials, and each fixture is run at two chunk budgets, so
+   a row sliced at both is counted twice; 680 of Docling's 900 come from the one
+   5,000-row spreadsheet. That is why `trials` ships alongside it — the bare
+   number would read as 900 distinct rows, which it is not. The comparison is
+   still like-for-like: the same fixtures at the same budgets. */
 export const atomicUnitsSliced = [
-  { tool: "chunk-engine", units: 0, highlight: true },
-  { tool: "Unstructured", units: 0 },
-  { tool: "LangChain · semchunk · Chonkie · s-t-s", units: 0 },
-  { tool: "Docling", units: 900 },
+  { tool: "chunk-engine", units: 0, trials: 36, dirtyTrials: 0, highlight: true },
+  { tool: "Unstructured", units: 0, trials: 12, dirtyTrials: 0 },
+  { tool: "LangChain · semchunk · Chonkie · s-t-s", units: 0, trials: 14, dirtyTrials: 0 },
+  { tool: "Docling", units: 900, trials: 12, dirtyTrials: 8 },
 ];
 
 /* ---- Speed, pooled (§7) — real ---- */

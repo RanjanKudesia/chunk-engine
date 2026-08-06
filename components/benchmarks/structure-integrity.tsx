@@ -31,10 +31,14 @@ function Cell({ v, highlight }: { v: number; highlight?: boolean }) {
 function SlicedTile({
   tool,
   units,
+  trials,
+  dirtyTrials,
   highlight,
 }: {
   tool: string;
   units: number;
+  trials: number;
+  dirtyTrials: number;
   highlight?: boolean;
 }) {
   const bad = units > 0;
@@ -65,6 +69,10 @@ function SlicedTile({
       >
         {tool}
       </div>
+      {/* The denominator, so the headline number cannot be read as distinct rows. */}
+      <div className="mt-1 text-xs text-muted-foreground">
+        in {dirtyTrials} of {trials} trials
+      </div>
     </div>
   );
 }
@@ -94,10 +102,12 @@ export function StructureIntegrity() {
         ))}
       </div>
       <p className="mx-auto mt-4 max-w-2xl text-center text-sm text-muted-foreground">
-        Atomic rows, list items, or code lines <strong>cut in half</strong> across
-        the same trials — unrecoverable damage, as opposed to dividing a unit that
-        genuinely exceeds the budget. {alsoZero.map((r) => r.tool).join(", ")} also
-        sliced none.
+        Atomic rows, list items, or code lines <strong>cut in half</strong> —
+        unrecoverable damage, as opposed to dividing a unit that genuinely exceeds
+        the budget. {alsoZero.map((r) => r.tool).join(", ")} also sliced none.
+        Counts are summed over trials at two chunk budgets, so a row cut at both
+        is counted twice; 680 of Docling&rsquo;s come from one 5,000-row
+        spreadsheet.
       </p>
 
       {/* Supporting detail, deliberately secondary. */}
