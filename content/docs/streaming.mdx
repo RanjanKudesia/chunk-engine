@@ -33,7 +33,7 @@ parsing algorithm, so it holds across Python, JavaScript, and Rust.
 
 | Format | Streamable modes | Memory profile |
 | --- | --- | --- |
-| **PDF** | All 7 | Parse-once-then-drain, with a **free construction**: the parse and chunking run on a worker thread (native) so the call returns immediately, and chunks arrive through a bounded channel rather than as one materialized collection. See the note below on why a PDF chunk cannot be finalized page by page. |
+| **PDF** | All 7 | **Incremental** for `default` — pages are read at the rate you consume chunks, so peak memory is one page rather than the document. Parse-once-then-drain for the other six modes, with a **free construction**: the work runs on a worker thread (native) so the call returns immediately, and chunks arrive through a bounded channel rather than as one materialized collection. See the note below. |
 | **Markdown / HTML / TXT** | All 7 | **Incremental** for `structural` / `semantic` (O(blocks)); parse-once-then-drain for the other four modes. |
 | **DOCX** | All 7 | Parse-once-then-drain — the document is parsed a single time, then chunks emit lazily. Peak ≈ file size + chunk vector. |
 | **DOC** (Word 97–2003) | All 7 | Parse-once-then-drain (binary piece-table reconstruction up front). |
@@ -42,15 +42,21 @@ parsing algorithm, so it holds across Python, JavaScript, and Rust.
 | **XLSX / XLS** | All 6 | **Incremental** for `row` / `sliding_window`; parse-once-then-drain for `table` / `sheet` / `page_aware` / `semantic` (they need whole-sheet analysis first). |
 | **CSV / TSV** | All 3 | **Incremental** — true line-by-line; `sliding_window` uses an O(window\_size) rolling buffer and never loads the full file. |
 
-<Callout type="info" title="Why PDF is not per-page">
-  Pagination splits sentences. The end of page 3 and the start of page 4 are
-  routinely one paragraph, and chunking each page separately breaks the sentence
-  at every page boundary — measured on a 12-page paper, that is 71 chunks
-  instead of 66. Heading *levels* are ranked across the whole document too, so a
-  page cannot be classified from a prefix. A PDF chunk therefore cannot be
-  finalized until the pages around it have been read, which is why streaming
-  PDF overlaps the work with your consumption rather than pretending to emit
-  from a partial document. Output stays byte-identical to `get_chunks`.
+<Callout type="info" title="Why only PDF's default mode is incremental">
+  It is the heading ranking that decides this, not pagination. `default` ranks
+  type sizes **within each page**, so a page can be parsed, chunked and dropped.
+  The other six modes rank sizes across the whole document, so their reader has
+  already read every page before it renders the first — no amount of chunker
+  work changes that, and claiming otherwise would be a promise the parser cannot
+  keep.
+
+  Pagination is *not* the obstacle it looks like. The end of page 3 and the
+  start of page 4 are routinely one paragraph, and chunking each page separately
+  breaks the sentence at every boundary — measured on a 12-page paper, 71 chunks
+  instead of 66. `default` does not chunk pages separately: the chunker is fed
+  one continuous stream of markdown and finalizes a chunk only once the text
+  after it has arrived. Output stays byte-identical to `get_chunks` in all seven
+  modes.
 </Callout>
 
 <Callout type="info" title="Profiles, not runtimes">
