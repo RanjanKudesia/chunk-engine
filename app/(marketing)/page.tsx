@@ -24,7 +24,7 @@ export default function Home() {
       <Section
         eyebrow="Performance"
         title="Milliseconds, not seconds"
-        description="A Rust core does the parsing and segmentation. Measured over 446 real files against its peers, Docling and Unstructured — see the full benchmark."
+        description="A Rust core does the parsing and segmentation. Measured over 473 real files against its peers, Docling and Unstructured — see the full benchmark."
       >
         <BenchmarkBars />
       </Section>

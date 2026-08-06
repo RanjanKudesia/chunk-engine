@@ -1,7 +1,7 @@
 /**
- * REAL competitive benchmark data — full-corpus run, 2026-07-28.
+ * REAL competitive benchmark data — full-corpus runs, 2026-07-28 and 2026-08-06.
  *
- * Source of truth: benchmarks/competitive/FINAL_REPORT.md (446 real files across
+ * Source of truth: benchmarks/competitive/FINAL_REPORT.md (473 real files across
  * all 36 formats; no sampling). Every number here is traceable to that report.
  * py_chunks is a document-understanding engine, benchmarked against its real
  * peers (Docling, Unstructured) — NOT positioned as a text-splitter vs LangChain.
@@ -12,13 +12,15 @@
  */
 
 export const BENCHMARK_ENV = {
-  date: "2026-07-28",
-  // Format coverage (§1) was re-measured on 2026-08-06 after the XLSB
-  // whole-workbook fix; every other section still dates from 2026-07-28 and is
-  // scheduled for a full re-run. Stated rather than blended, so no number here
-  // is attributed to a run it did not come from.
+  date: "2026-08-06",
+  // §1–§5 and §7 were all re-measured on 2026-08-06, after the engine work that
+  // made the 2026-07-28 figures stale. §6 (prose sentence-integrity vs
+  // text-splitters) still dates from 2026-07-28 — nothing in that work touched
+  // it. Stated rather than blended, so no number here is attributed to a run it
+  // did not come from.
   coverageDate: "2026-08-06",
-  corpus: "446 real files · all 36 formats · 3 runs/file (median)",
+  proseDate: "2026-07-28",
+  corpus: "473 real files · all 36 formats · 3 runs/file (median)",
   machine: "Apple M1 Max · 10 cores (8P+2E) · 32 GB",
   os: "macOS 26.5.1",
   runtimes:
@@ -51,12 +53,17 @@ export const formatCoverage = {
 
 /* ---- Structure integrity under load (§2) — real ---- */
 // Kept-whole rate (%): fraction of oversized units landing in exactly one chunk.
+/* Re-run 2026-08-06. The previous figures here (100% for list and code) are
+   obsolete and must not be restored: chunk-engine deliberately stopped keeping
+   oversized units whole, because a single 11k-token chunk breaks the bounded-size
+   contract every embedding model depends on. What still separates the tools is
+   whether a split cuts an atomic row in half — see atomicUnitsSliced. */
 export const structureIntegrity = {
   columns: ["Table", "List", "Code"] as const,
   rows: [
-    { tool: "chunk-engine · section", vals: [50, 100, 100], highlight: true },
-    { tool: "chunk-engine · default", vals: [20, 100, 100], highlight: true },
-    { tool: "chunk-engine · semantic", vals: [20, 100, 100], highlight: true },
+    { tool: "chunk-engine · default", vals: [20, 0, 0], highlight: true },
+    { tool: "chunk-engine · semantic", vals: [20, 0, 0], highlight: true },
+    { tool: "chunk-engine · section", vals: [0, 0, 0], highlight: true },
     { tool: "Docling", vals: [0, 0, 0] },
     { tool: "Unstructured", vals: [0, 0, 0] },
     { tool: "LangChain", vals: [0, 0, 0] },
@@ -64,15 +71,25 @@ export const structureIntegrity = {
   ] as { tool: string; vals: number[]; highlight?: boolean }[],
 };
 
+/* Atomic rows / list items / code lines cut in half across the same trials —
+   unrecoverable damage, and the axis that does still separate the tools.
+   Lower is better; 0 is the only good answer. */
+export const atomicUnitsSliced = [
+  { tool: "chunk-engine", units: 0, highlight: true },
+  { tool: "Unstructured", units: 0 },
+  { tool: "LangChain · semchunk · Chonkie · s-t-s", units: 0 },
+  { tool: "Docling", units: 900 },
+];
+
 /* ---- Speed, pooled (§7) — real ---- */
 export const speedPooled = {
-  headline: { msPerFile: 0.51, filesPerSec: 1980, files: 446 },
+  headline: { msPerFile: 0.32, filesPerSec: 3125, files: 473 },
   // files/sec — higher is better; py-chunks dominates.
   rows: [
-    { tool: "chunk-engine", filesPerSec: 1980, ms: 0.51, multiple: "1×", highlight: true },
-    { tool: "docling", filesPerSec: 35.9, ms: 27.87, multiple: "55× slower" },
-    { tool: "markitdown + langchain", filesPerSec: 35.8, ms: 27.92, multiple: "55× slower" },
-    { tool: "unstructured", filesPerSec: 8.9, ms: 112.77, multiple: "221× slower" },
+    { tool: "chunk-engine", filesPerSec: 3125, ms: 0.32, multiple: "1×", highlight: true },
+    { tool: "docling", filesPerSec: 35.2, ms: 28.4, multiple: "89× slower" },
+    { tool: "markitdown + langchain", filesPerSec: 26.1, ms: 38.27, multiple: "120× slower" },
+    { tool: "unstructured", filesPerSec: 5.9, ms: 168.98, multiple: "528× slower" },
   ],
 };
 
@@ -86,11 +103,11 @@ export interface CategorySpeed {
   top: string; // largest multiple, with competitor
 }
 export const speedByCategory: CategorySpeed[] = [
-  { category: "PDF", py: 61.38, docling: 11350.79, unstructured: 1970.46, markitdownLangchain: 1353.12, top: "185× vs Docling" },
-  { category: "PowerPoint", py: 1.17, docling: 694.43, unstructured: 1861.0, markitdownLangchain: 436.96, top: "1,591× vs Unstructured" },
-  { category: "Word", py: 0.44, docling: 183.11, unstructured: 134.04, markitdownLangchain: 73.89, top: "416× vs Docling" },
-  { category: "Ebook", py: 5.39, docling: 359.94, unstructured: 1921.57, markitdownLangchain: 118.43, top: "357× vs Unstructured" },
-  { category: "Spreadsheet", py: 0.49, docling: 12.01, unstructured: 25.61, markitdownLangchain: 19.01, top: "52× vs Unstructured" },
+  { category: "PDF", py: 32.78, docling: 8080.79, unstructured: 1916.88, markitdownLangchain: 1181.97, top: "247× vs Docling" },
+  { category: "PowerPoint", py: 0.56, docling: 356.53, unstructured: 618.09, markitdownLangchain: 355.43, top: "1,104× vs Unstructured" },
+  { category: "Word", py: 0.47, docling: 151.02, unstructured: 132.87, markitdownLangchain: 101.22, top: "321× vs Docling" },
+  { category: "Ebook", py: 6.89, docling: 436.02, unstructured: 1334.84, markitdownLangchain: 110.95, top: "194× vs Unstructured" },
+  { category: "Spreadsheet", py: 0.29, docling: 13.7, unstructured: 27.03, markitdownLangchain: 24.16, top: "93× vs Unstructured" },
 ];
 
 /* ---- Content-type precision (§3) — real (table & code) ---- */
@@ -105,7 +122,7 @@ export const metadataStats = {
   pageRate: [
     { tool: "unstructured", rate: 0.768 },
     { tool: "docling", rate: 0.667 },
-    { tool: "chunk-engine", rate: 0.585, highlight: true },
+    { tool: "chunk-engine", rate: 0.675, highlight: true },
   ],
   // ...but attaches per-format schemas no competitor exposes (their only shared
   // structured field is page_number).
@@ -135,19 +152,19 @@ export interface ScoreRow {
 }
 export const scorecard: ScoreRow[] = [
   { axis: "Format coverage", winner: "py", detail: "36/36 vs 17–26; text-splitters 0/36" },
-  { axis: "Structure integrity (oversized units)", winner: "py", detail: "only tool that keeps any whole — competitors 0%" },
+  { axis: "Structure integrity (oversized units)", winner: "py", detail: "0 atomic rows sliced; Docling sliced 900" },
   { axis: "Content-type precision (table / code)", winner: "py", detail: "1.0 / 1.0 vs 0.14–0.85" },
   { axis: "Content-type recall (heading / list)", winner: "Docling", detail: "chunk-engine retains ~99% of content but under-labels at anchor level" },
   { axis: "Metadata field richness", winner: "py", detail: "only tool with per-format schemas" },
-  { axis: "Page-number population", winner: "Unstructured / Docling", detail: "0.67–0.77 vs chunk-engine 0.585" },
-  { axis: "Reading order", winner: "tie", detail: "all four ~0.92–0.93 (within measurement noise)" },
+  { axis: "Page-number population", winner: "Unstructured / Docling", detail: "0.67–0.77 vs chunk-engine 0.675" },
+  { axis: "Reading order", winner: "py", detail: "section 0.947 and 5/12 fixtures fully ordered, vs 0.922–0.928 and 3/12" },
   { axis: "Prose sentence-integrity", winner: "tie", detail: "0 splits any mode; sliding_window at parity" },
-  { axis: "Speed (pooled, 446 files)", winner: "py", detail: "55–221× faster; fastest in every category" },
+  { axis: "Speed (pooled, 473 files)", winner: "py", detail: "89–528× faster; fastest in every category" },
 ];
 
 /* ---- Honestly-disclosed limitations (§ known limitations) ---- */
 export const knownLimitations = [
-  "Page-number metadata population (0.585) trails Docling/Unstructured (0.67–0.77) on page-aware formats — offset by far richer per-format metadata schemas.",
+  "Page-number metadata population (0.675) still trails Unstructured (0.768) on page-aware formats, though it now edges Docling (0.667) — offset by far richer per-format metadata schemas.",
   "On headings/lists chunk-engine under-labels at anchor granularity (but retains ~99% of the content) — it favours higher-value typed units.",
   "All numbers are Apple Silicon (M1 Max) and not cross-machine comparable; a neutral x86 cloud run is planned.",
 ];
@@ -176,9 +193,9 @@ export const benchmarks: BenchmarkGroup[] = [
     unit: "files / sec",
     better: "higher",
     rows: [
-      { label: "chunk-engine", value: 1980, highlight: true },
-      { label: "docling", value: 36 },
-      { label: "unstructured", value: 9 },
+      { label: "chunk-engine", value: 3125, highlight: true },
+      { label: "docling", value: 35 },
+      { label: "unstructured", value: 6 },
     ],
   },
   {
@@ -187,13 +204,13 @@ export const benchmarks: BenchmarkGroup[] = [
     unit: "ms / file",
     better: "lower",
     rows: [
-      { label: "chunk-engine", value: 0.51, highlight: true },
-      { label: "docling", value: 27.87 },
-      { label: "unstructured", value: 112.77 },
+      { label: "chunk-engine", value: 0.32, highlight: true },
+      { label: "docling", value: 28.4 },
+      { label: "unstructured", value: 168.98 },
     ],
   },
 ];
 
 // Shown near the landing bars — a measured-run note (no longer a placeholder).
 export const BENCHMARK_DISCLAIMER =
-  "Measured over 446 files on Apple M1 Max (py-chunks 0.5.0). See the benchmarks page for full methodology.";
+  "Measured over 473 files on Apple M1 Max (py-chunks 0.5.0), 2026-08-06. See the benchmarks page for full methodology.";

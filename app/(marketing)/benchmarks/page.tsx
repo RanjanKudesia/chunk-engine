@@ -20,7 +20,7 @@ import { CoverageMatrix } from "@/components/benchmarks/coverage-matrix";
 export const metadata: Metadata = {
   title: "Benchmarks",
   description:
-    "A full-corpus competitive benchmark: format coverage, structure integrity, content-type accuracy, and speed vs Docling and Unstructured across 446 real files.",
+    "A full-corpus competitive benchmark: format coverage, structure integrity, content-type accuracy, and speed vs Docling and Unstructured across 473 real files.",
 };
 
 function EnvCard() {
@@ -53,6 +53,11 @@ function EnvCard() {
       <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
         {BENCHMARK_ENV.caveat}
       </p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Every figure on this page is from the {BENCHMARK_ENV.date} run, except
+        prose sentence-integrity, which is from {BENCHMARK_ENV.proseDate} — the
+        engine work between the two runs did not touch it.
+      </p>
     </div>
   );
 }
@@ -64,7 +69,7 @@ export default function BenchmarksPage() {
         eyebrow="Benchmarks"
         title="Measured, not claimed"
         titleAs="h1"
-        description="A full-corpus competitive run — 446 real files across all 36 formats. chunk-engine is a document-understanding engine, so it's measured against its real peers, Docling and Unstructured (text-splitters can't read a file at all)."
+        description="A full-corpus competitive run — 473 real files across all 36 formats. chunk-engine is a document-understanding engine, so it's measured against its real peers, Docling and Unstructured (text-splitters can't read a file at all)."
       >
         <div className="flex flex-wrap items-center justify-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -109,8 +114,8 @@ export default function BenchmarksPage() {
       <Section
         className="border-t border-border/60 bg-surface/30"
         eyebrow="Structure integrity"
-        title="Keeps oversized units whole"
-        description="Feed each tool tables, lists, and code blocks larger than any chunk budget. Only one tool refuses to cut them in half."
+        title="Never cuts a row in half"
+        description="Feed each tool tables, lists, and code blocks larger than any chunk budget. What matters is not whether they get divided — they must — but whether a row survives it."
       >
         <StructureIntegrity />
       </Section>
@@ -120,7 +125,7 @@ export default function BenchmarksPage() {
         className="border-t border-border/60"
         eyebrow="Speed"
         title="Milliseconds, not seconds"
-        description="Native Rust parsing with no ML model loading and no per-element Python overhead. Pooled over all 446 files."
+        description="Native Rust parsing with no ML model loading and no per-element Python overhead. Pooled over all 473 files."
       >
         <div className="mx-auto mb-8 grid max-w-3xl gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-brand/30 bg-surface p-6 text-center">
@@ -138,7 +143,7 @@ export default function BenchmarksPage() {
           </div>
           <div className="rounded-xl border border-border bg-surface p-6 text-center">
             <div className="text-gradient-brand font-mono text-3xl font-semibold tabular-nums">
-              55–221×
+              89–528×
             </div>
             <div className="mt-1 text-sm text-muted-foreground">
               faster than peers

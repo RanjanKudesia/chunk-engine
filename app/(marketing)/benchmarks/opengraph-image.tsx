@@ -12,7 +12,7 @@ export default function Image() {
       <OgCard
         eyebrow="Benchmarks"
         title="Measured, not claimed"
-        subtitle="446 real files across all 36 formats — coverage, structure integrity, and speed vs Docling and Unstructured."
+        subtitle="473 real files across all 36 formats — coverage, structure integrity, and speed vs Docling and Unstructured."
       />
     ),
     { ...OG_SIZE }
