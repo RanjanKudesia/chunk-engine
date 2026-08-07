@@ -5,7 +5,7 @@ description: Release history for py-chunks, reconstructed from git tags and comm
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Current versions: **py-chunks 0.6.0**, **js-chunks 0.6.0**, **rs-chunks 0.6.0**.
+Current versions: **py-chunks 0.6.1**, **js-chunks 0.6.1**, **rs-chunks 0.6.1**.
 
 <Callout type="info">
   **From 0.6.0 the three packages share one version number.** They are one engine
@@ -13,9 +13,45 @@ Current versions: **py-chunks 0.6.0**, **js-chunks 0.6.0**, **rs-chunks 0.6.0**.
   `rs-chunks` now move in lockstep — `js-chunks` and `rs-chunks` jump from `0.1.0`
   to `0.6.0` to join `py-chunks`, not because 5 releases happened in between.
   History before 0.6.0 tracks **py-chunks**, the longest-running package, from
-  which the shared engine grew. No package ships a `CHANGELOG` file; this is
-  reconstructed from git tags and commit messages.
+  which the shared engine grew. Entries below are reconstructed from git tags and
+  commit messages; `py-chunks` and `js-chunks` also ship their own `CHANGELOG`
+  files from 0.6.1.
 </Callout>
+
+## 0.6.1
+
+Packaging, typing and error ergonomics — no new formats or modes.
+
+**js-chunks**
+
+- **Typed errors.** Every engine failure now throws a `ChunkError` — a real
+  `Error` subclass — with a `kind` of `unsupported`, `invalid-arg`, `parse`,
+  `io` or `unknown`. Failures used to be thrown as bare strings, so
+  `e instanceof Error` was false and there was no stack; both work now.
+  `ChunkError` and the `ChunkErrorKind` type are exported. Messages are
+  unchanged. See [Error Handling](/docs/error-handling).
+- **A supported bundler path.** New `js-chunks/web` subpath export (plus
+  `js-chunks/web/chunks_wasm_bg.wasm`) for vite/webpack apps; the default entry
+  still auto-loads on Node, Bun, Deno and unbundled browser ESM. See
+  [Installation](/docs/installation#bundlers-vitewebpack).
+- `chunkPdfMarkdownWithImages` and `normalizePdfMarkdown` are now public API,
+  joining `chunkPdfMarkdown` for host-parsed PDF workflows.
+- `"sideEffects": false` for tree-shaking. The package is ESM-only —
+  `require()` needs Node ≥ 20.19.
+
+**py-chunks**
+
+- **Stable-ABI wheels.** One binary wheel per platform now covers CPython 3.9+;
+  previously only 3.13 got a wheel and everyone else fell back to a source
+  build. Linux aarch64 wheels added.
+- **The package is typed** — `py.typed`, complete stubs for the compiled module,
+  and the `Typing :: Typed` classifier, so mypy and pyright see full
+  annotations.
+- **In-memory input no longer touches disk.** Bytes, file objects, uploads and
+  URLs are passed straight to the engine instead of round-tripping through a
+  temp file (output verified byte-identical).
+- The GIL is released while the engine parses and chunks, so a long parse no
+  longer blocks other Python threads.
 
 ## 0.6.0
 

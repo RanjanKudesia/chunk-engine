@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
@@ -13,6 +14,13 @@ import { ChunkVisualizer } from "@/components/landing/chunk-visualizer";
 import { RagProblem } from "@/components/landing/rag-problem";
 import { ModesOverview } from "@/components/landing/modes-overview";
 import { LanguagesSection } from "@/components/landing/languages-section";
+
+// Title, description, and openGraph are inherited from the root layout — the
+// homepage is the one page the layout defaults describe. Only the canonical is
+// declared here (the layout deliberately sets none; see app/layout.tsx).
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export default function Home() {
   return (

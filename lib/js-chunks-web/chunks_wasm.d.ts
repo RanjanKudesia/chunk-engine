@@ -7,7 +7,8 @@
 export function __start(): void;
 
 /**
- * Chunk PDF markdown produced host-side (e.g. by `@llamaindex/liteparse-wasm`).
+ * Chunk PDF markdown a host-side parser already produced (`.pdf` bytes are
+ * parsed by the engine itself — this is for callers with their own markdown).
  * `total_pages` populates `document_metadata.total_pages`.
  */
 export function chunkPdfMarkdown(markdown: string, total_pages: number, mode: string, window_size: number, overlap: number, sentences_per_chunk: number, paragraphs_per_page: number): any;

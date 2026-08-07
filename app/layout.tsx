@@ -54,7 +54,10 @@ export const metadata: Metadata = {
     "js-chunks",
     "rs-chunks",
   ],
-  alternates: { canonical: "/" },
+  // No site-wide canonical here — a root-layout `alternates.canonical` would
+  // stamp every page as a duplicate of the homepage. Each page declares its own
+  // (marketing pages in their metadata exports; docs in generateMetadata),
+  // resolved against `metadataBase` above.
   robots: {
     index: true,
     follow: true,

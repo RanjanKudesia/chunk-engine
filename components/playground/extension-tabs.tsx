@@ -3,6 +3,9 @@
 import { playgroundExts } from "@/data/playground";
 import { cn } from "@/lib/utils";
 
+/** Format picker — a group of toggle buttons, one pressed at a time.
+ * Plain buttons with `aria-pressed` (not a tablist: there is no roving
+ * focus / arrow-key behavior, so tab semantics would over-promise). */
 export function ExtensionTabs({
   ext,
   onSelect,
@@ -11,25 +14,21 @@ export function ExtensionTabs({
   onSelect: (ext: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div role="group" aria-label="Document format" className="flex flex-wrap gap-2">
       {playgroundExts.map((e) => (
         <button
           key={e.ext}
           type="button"
-          disabled={!e.enabled}
-          onClick={() => e.enabled && onSelect(e.ext)}
-          title={e.enabled ? undefined : "Coming soon"}
+          aria-pressed={e.ext === ext}
+          onClick={() => onSelect(e.ext)}
           className={cn(
             "rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors",
             e.ext === ext
               ? "border-brand/40 bg-brand/10 text-brand"
-              : e.enabled
-                ? "border-border text-muted-foreground hover:text-foreground"
-                : "cursor-not-allowed border-border/60 text-muted-foreground/40"
+              : "border-border text-muted-foreground hover:text-foreground"
           )}
         >
           {e.label}
-          {!e.enabled ? <span className="ml-1.5 opacity-70">soon</span> : null}
         </button>
       ))}
     </div>

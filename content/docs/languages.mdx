@@ -28,26 +28,20 @@ The operations are identical; the surface follows each language's conventions.
 | Markdown | `get_markdown(...)` | `getMarkdown(...)` | `get_markdown(...)` |
 | Content type field | `chunk["content_type"]` | `c.contentType` | `c.content_type` |
 | Options | keyword args | options object | positional args |
+| Failures | raised exceptions | thrown `ChunkError` | `Err(ChunkError)` |
 
 ## Parity
 
 `rs-chunks` is validated against the `py-chunks` reference engine over **every
 fixture × every mode**:
 
-- **2204 / 2214 comparisons byte-identical (99.5%).** All OOXML, legacy binary
-  (`.doc`/`.ppt`), OpenDocument, email, ebook, and delimited families are
-  identical.
-- **Image extraction: 1056 / 1056 identical** (chunk counts, image counts,
-  names, and image-chunk contents).
-- **Markdown conversion: 273 / 273 identical** (markdown string + image set).
+- **3,222 / 3,222 comparisons byte-identical (100%).** Every family — OOXML,
+  legacy binary (`.doc`/`.ppt`), OpenDocument, email, ebook, PDF, notebook,
+  and delimited — is identical, including `semantic`-mode
+  `primary_merge_reason`: all engines share the same deterministic tie-break
+  (sort by count descending, then key ascending).
+- **Image extraction and markdown conversion** are verified byte-identical by
+  their own dedicated harnesses on every image-bearing fixture.
 
-<Callout title="About the 0.5%">
-  The remaining differences are confined to `semantic`-mode
-  `primary_merge_reason`, a tie-break the reference engine resolves via
-  randomized `HashMap` iteration order — i.e. **py-chunks itself is
-  non-deterministic there**, and rs-chunks reproduces that behavior. Chunk
-  content and the `merge_reasons` list are identical.
-</Callout>
-
-Adversarial inputs fail with a clean error and never panic — panic-prone
-third-party parsers are wrapped.
+Adversarial inputs fail with a clean, catchable error and never panic — every
+public entry point is guarded at the dispatch boundary.

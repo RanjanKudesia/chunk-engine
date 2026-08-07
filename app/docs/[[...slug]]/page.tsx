@@ -64,9 +64,11 @@ export async function generateMetadata(props: {
   return {
     title: page.data.title,
     description: page.data.description,
+    alternates: { canonical: page.url },
     openGraph: {
       title: page.data.title,
       description: page.data.description,
+      url: page.url,
       images: [{ url: ogImage, width: 1200, height: 630 }],
     },
     twitter: {

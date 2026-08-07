@@ -90,13 +90,16 @@ export const atomicUnitsSliced = [
 /* ---- Speed, pooled (§7) — real ---- */
 export const speedPooled = {
   headline: { msPerFile: 0.32, filesPerSec: 3125, files: 473 },
-  // files/sec — higher is better; py-chunks dominates.
+  // files/sec — higher is better; py-chunks dominates. `succeeded` is each
+  // tool's successful-file count out of the 473 attempted (FINAL_REPORT §7):
+  // a tool's median only pools over the files it could actually read.
   rows: [
-    { tool: "chunk-engine", filesPerSec: 3125, ms: 0.32, multiple: "1×", highlight: true },
-    { tool: "docling", filesPerSec: 35.2, ms: 28.4, multiple: "89× slower" },
-    { tool: "markitdown + langchain", filesPerSec: 26.1, ms: 38.27, multiple: "120× slower" },
-    { tool: "unstructured", filesPerSec: 5.9, ms: 168.98, multiple: "528× slower" },
+    { tool: "chunk-engine", filesPerSec: 3125, ms: 0.32, multiple: "1×", succeeded: 450, highlight: true },
+    { tool: "docling", filesPerSec: 35.2, ms: 28.4, multiple: "89× slower", succeeded: 232 },
+    { tool: "markitdown + langchain", filesPerSec: 26.1, ms: 38.27, multiple: "120× slower", succeeded: 348 },
+    { tool: "unstructured", filesPerSec: 5.9, ms: 168.98, multiple: "528× slower", succeeded: 262 },
   ],
+  attempted: 473,
 };
 
 /* ---- Speed by format category (§7) — real ---- */
@@ -152,7 +155,8 @@ export const proseIntegrity = {
 /* ---- Scorecard (§ scorecard) — real, incl. the axes py-chunks does NOT win ---- */
 export interface ScoreRow {
   axis: string;
-  // "py" -> brand win · "tie" -> neutral · otherwise the competitor that wins.
+  // "py" -> brand win · "tie" -> neutral · otherwise rendered verbatim as a
+  // neutral badge (a competitor's name, or a qualified edge).
   winner: string;
   detail: string;
 }
@@ -163,7 +167,7 @@ export const scorecard: ScoreRow[] = [
   { axis: "Content-type recall (heading / list)", winner: "Docling", detail: "chunk-engine retains ~99% of content but under-labels at anchor level" },
   { axis: "Metadata field richness", winner: "py", detail: "only tool with per-format schemas" },
   { axis: "Page-number population", winner: "Unstructured / Docling", detail: "0.67–0.77 vs chunk-engine 0.675" },
-  { axis: "Reading order", winner: "py", detail: "section 0.947 and 5/12 fixtures fully ordered, vs 0.922–0.928 and 3/12" },
+  { axis: "Reading order", winner: "chunk-engine (edge)", detail: "section 0.947 and 5/12 fixtures fully ordered, vs 0.922–0.928 and 3/12 — coarse measurement; a tie within noise is not ruled out" },
   { axis: "Prose sentence-integrity", winner: "tie", detail: "0 splits any mode; sliding_window at parity" },
   { axis: "Speed (pooled, 473 files)", winner: "py", detail: "89–528× faster; fastest in every category" },
 ];

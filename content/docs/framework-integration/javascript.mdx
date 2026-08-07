@@ -11,8 +11,10 @@ name). WASM is instantiated lazily and cached on the first call.
 
 <Callout type="info" title="Runtime note">
   js-chunks runs on Node, Bun, Deno, and browsers. In serverless/edge contexts,
-  run it on a **Node.js runtime** (not the edge runtime) so the WASM module and
-  optional PDF peer dependency load — see the Next.js example below.
+  run it on a **Node.js runtime** (not the edge runtime) so the WASM module
+  loads — see the Next.js example below. Bundled browser apps import the web
+  build explicitly: see
+  [Installation](/docs/installation#bundlers-vitewebpack).
 </Callout>
 
 ## Express (Node)
@@ -78,7 +80,7 @@ export default app;
 import { NextRequest, NextResponse } from "next/server";
 import { getChunks } from "js-chunks";
 
-export const runtime = "nodejs"; // WASM + optional PDF peer dep need Node
+export const runtime = "nodejs"; // the WASM module needs the Node runtime
 
 export async function POST(req: NextRequest) {
   const form = await req.formData();

@@ -1,12 +1,15 @@
 /**
  * Browser-side chunking engine for the playground.
  *
- * Drives js-chunks' WASM web build (vendored under lib/js-chunks-web/ from
- * js-chunks 0.1.0's pkg-web output) DIRECTLY, rather than the npm `dist/index.js`
- * wrapper — that wrapper has Node-only `node:module`/`node:fs` branches which
- * break browser bundling. Everything here runs 100% client-side; uploaded bytes
- * never leave the browser.
+ * Drives js-chunks' WASM web build (vendored under lib/js-chunks-web/ from the
+ * pkg-web output of the js-chunks build the site is pinned to — see
+ * PLAYGROUND.md for why it's vendored and how to refresh it) DIRECTLY, rather
+ * than the npm `dist/index.js` wrapper — that wrapper has Node-only
+ * `node:module`/`node:fs` branches which break browser bundling. Everything
+ * here runs 100% client-side; uploaded bytes never leave the browser.
  */
+
+import { pdfToMarkdown } from "./pdf";
 
 export interface PlaygroundChunk {
   content: string;
@@ -85,79 +88,6 @@ function mapImage(raw: { name: string; data: Uint8Array }): PlaygroundImage {
 function extOf(filename: string): string {
   const dot = filename.lastIndexOf(".");
   return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : "";
-}
-
-/* ---- PDF: parsed host-side by @llamaindex/liteparse-wasm, then chunked by the
- * engine's PDF-markdown chunker — mirrors js-chunks / rs-chunks exactly. ---- */
-
-interface LiteParseModule {
-  default: (init?: unknown) => Promise<unknown>;
-  LiteParse: new (opts: Record<string, unknown>) => {
-    parse: (data: Uint8Array) => Promise<{
-      pages: { markdown: string }[];
-      images: { id: string | number; bytes: Uint8Array | number[] }[];
-    }>;
-  };
-}
-
-let _lp: LiteParseModule | null = null;
-let _lpPromise: Promise<LiteParseModule> | null = null;
-
-async function loadLiteParse(): Promise<LiteParseModule> {
-  if (_lp) return _lp;
-  if (!_lpPromise) {
-    _lpPromise = (async () => {
-      const mod = (await import(
-        "@llamaindex/liteparse-wasm"
-      )) as unknown as LiteParseModule;
-      if (typeof mod.default === "function") await mod.default();
-      _lp = mod;
-      return mod;
-    })();
-  }
-  return _lpPromise;
-}
-
-interface PdfConversion {
-  markdown: string;
-  totalPages: number;
-  images: PlaygroundImage[];
-}
-
-// Cache the last conversion so changing mode/params doesn't re-parse the PDF
-// (parsing is the expensive step; the same file bytes are reused across runs).
-let _pdfCache: { data: Uint8Array; embed: boolean; conv: PdfConversion } | null =
-  null;
-
-async function pdfToMarkdown(
-  data: Uint8Array,
-  embedImages: boolean
-): Promise<PdfConversion> {
-  if (_pdfCache && _pdfCache.data === data && _pdfCache.embed === embedImages) {
-    return _pdfCache.conv;
-  }
-  const lp = await loadLiteParse();
-  const parser = new lp.LiteParse({
-    ocrEnabled: false,
-    outputFormat: "markdown",
-    imageMode: embedImages ? "embed" : "placeholder",
-    quiet: true,
-  });
-  const result = await parser.parse(data);
-  const totalPages = result.pages.length;
-  const markdown = result.pages
-    .map((p) => p.markdown.trimEnd())
-    .filter((m) => m !== "")
-    .join("\n\n---\n\n");
-  const images = embedImages
-    ? result.images.map((img) => ({
-        name: `image_${img.id}.png`,
-        data: img.bytes instanceof Uint8Array ? img.bytes : new Uint8Array(img.bytes),
-      }))
-    : [];
-  const conv = { markdown, totalPages, images };
-  _pdfCache = { data, embed: embedImages, conv };
-  return conv;
 }
 
 export async function chunk(

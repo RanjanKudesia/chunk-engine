@@ -1,12 +1,12 @@
 /**
- * Playground configuration. Starts with DOCX (a real sample preloaded); more
- * extensions get flipped to `enabled` as they're wired up.
+ * Playground configuration — the formats the in-browser playground exposes,
+ * each with a preloaded real sample. Adding a format is more than a list entry:
+ * see PLAYGROUND.md for the per-format wiring steps and quality bar.
  */
 
 export interface PlaygroundExt {
   ext: string; // without dot
   label: string;
-  enabled: boolean;
   /** Public path to a default sample file, fetched on select. */
   sample?: string;
   sampleName?: string; // filename passed to the engine (drives dispatch)
@@ -15,86 +15,62 @@ export interface PlaygroundExt {
 export const playgroundExts: PlaygroundExt[] = [
   {
     ext: "docx",
-    label: "DOCX",
-    enabled: true,
-    sample: "/playground/all_round.docx",
+    label: "DOCX",    sample: "/playground/all_round.docx",
     sampleName: "all_round.docx",
   },
   {
     ext: "pdf",
-    label: "PDF",
-    enabled: true,
-    sample: "/playground/word2vec.pdf",
+    label: "PDF",    sample: "/playground/word2vec.pdf",
     sampleName: "word2vec.pdf",
   },
   {
     ext: "pptx",
-    label: "PPTX",
-    enabled: true,
-    sample: "/playground/mixed_content.pptx",
+    label: "PPTX",    sample: "/playground/mixed_content.pptx",
     sampleName: "mixed_content.pptx",
   },
   {
     ext: "xlsx",
-    label: "XLSX",
-    enabled: true,
-    sample: "/playground/sample.xlsx",
+    label: "XLSX",    sample: "/playground/sample.xlsx",
     sampleName: "sample.xlsx",
   },
   {
     ext: "html",
-    label: "HTML",
-    enabled: true,
-    sample: "/playground/structured_docs.html",
+    label: "HTML",    sample: "/playground/structured_docs.html",
     sampleName: "structured_docs.html",
   },
   {
     ext: "md",
-    label: "Markdown",
-    enabled: true,
-    sample: "/playground/sample.md",
+    label: "Markdown",    sample: "/playground/sample.md",
     sampleName: "sample.md",
   },
   {
     ext: "txt",
-    label: "TXT",
-    enabled: true,
-    sample: "/playground/structured_report.txt",
+    label: "TXT",    sample: "/playground/structured_report.txt",
     sampleName: "structured_report.txt",
   },
   {
     ext: "csv",
-    label: "CSV",
-    enabled: true,
-    sample: "/playground/iris.csv",
+    label: "CSV",    sample: "/playground/iris.csv",
     sampleName: "iris.csv",
   },
   {
     ext: "json",
-    label: "JSON",
-    enabled: true,
-    sample: "/playground/orders.json",
+    label: "JSON",    sample: "/playground/orders.json",
     sampleName: "orders.json",
   },
   {
     ext: "eml",
-    label: "EML",
-    enabled: true,
-    sample: "/playground/message.eml",
+    label: "EML",    sample: "/playground/message.eml",
     sampleName: "message.eml",
   },
   {
     ext: "msg",
-    label: "MSG",
-    enabled: true,
-    sample: "/playground/message.msg",
+    label: "MSG",    sample: "/playground/message.msg",
     sampleName: "message.msg",
   },
   {
     ext: "epub",
-    label: "EPUB",
-    enabled: true,
-    sample: "/playground/book.epub",
+    label: "EPUB",    sample: "/playground/book.epub",
     sampleName: "book.epub",
   },
 ];

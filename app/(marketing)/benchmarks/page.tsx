@@ -1,66 +1,35 @@
 import type { Metadata } from "next";
-import { Check } from "lucide-react";
 
-import {
-  BENCHMARK_ENV,
-  speedPooled,
-  contentTypePrecision,
-  proseIntegrity,
-  knownLimitations,
-} from "@/data/benchmarks";
 import { Section } from "@/components/section";
-import { StatBars } from "@/components/benchmarks/stat-bars";
+import { RegistryBadges } from "@/components/benchmarks/registry-badges";
+import { EnvCard } from "@/components/benchmarks/env-card";
 import { CoverageBars } from "@/components/benchmarks/coverage-bars";
 import { StructureIntegrity } from "@/components/benchmarks/structure-integrity";
+import { SpeedPooled } from "@/components/benchmarks/speed-pooled";
 import { SpeedCategory } from "@/components/benchmarks/speed-category";
+import { PrecisionTable } from "@/components/benchmarks/precision-table";
 import { MetadataRichness } from "@/components/benchmarks/metadata-richness";
-import { Scorecard } from "@/components/benchmarks/scorecard";
+import { ProseIntegrity } from "@/components/benchmarks/prose-integrity";
 import { CoverageMatrix } from "@/components/benchmarks/coverage-matrix";
+import { Scorecard } from "@/components/benchmarks/scorecard";
+import { Limitations } from "@/components/benchmarks/limitations";
+
+const description =
+  "A full-corpus competitive benchmark: format coverage, structure integrity, content-type accuracy, and speed vs Docling and Unstructured across 473 real files.";
 
 export const metadata: Metadata = {
   title: "Benchmarks",
-  description:
-    "A full-corpus competitive benchmark: format coverage, structure integrity, content-type accuracy, and speed vs Docling and Unstructured across 473 real files.",
+  description,
+  alternates: { canonical: "/benchmarks" },
+  // Declaring openGraph here replaces the root layout's wholesale (Next does
+  // not deep-merge it), so url/title/description must all follow this page.
+  openGraph: {
+    type: "website",
+    url: "/benchmarks",
+    title: "Benchmarks",
+    description,
+  },
 };
-
-function EnvCard() {
-  const rows: [string, string][] = [
-    ["Corpus", BENCHMARK_ENV.corpus],
-    ["Machine", BENCHMARK_ENV.machine],
-    ["OS", BENCHMARK_ENV.os],
-    ["Runtimes", BENCHMARK_ENV.runtimes],
-  ];
-  return (
-    <div className="mx-auto mt-8 max-w-2xl rounded-xl border border-border bg-surface p-5 text-left">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-          Environment
-        </span>
-        <span className="font-mono text-xs text-muted-foreground">
-          {BENCHMARK_ENV.date}
-        </span>
-      </div>
-      <dl className="space-y-1.5 text-sm">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
-            <dt className="w-24 shrink-0 text-muted-foreground">{k}</dt>
-            <dd className="font-mono text-xs text-foreground/90 sm:text-[13px]">
-              {v}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-        {BENCHMARK_ENV.caveat}
-      </p>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Every figure on this page is from the {BENCHMARK_ENV.date} run, except
-        prose sentence-integrity, which is from {BENCHMARK_ENV.proseDate} — the
-        engine work between the two runs did not touch it.
-      </p>
-    </div>
-  );
-}
 
 export default function BenchmarksPage() {
   return (
@@ -71,32 +40,7 @@ export default function BenchmarksPage() {
         titleAs="h1"
         description="A full-corpus competitive run — 473 real files across all 36 formats. chunk-engine is a document-understanding engine, so it's measured against its real peers, Docling and Unstructured (text-splitters can't read a file at all)."
       >
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://img.shields.io/pypi/v/py-chunks?style=flat-square&label=py-chunks&color=e8511e"
-            alt="py-chunks version on PyPI"
-            width={128}
-            height={24}
-            className="h-6 w-auto"
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://img.shields.io/npm/v/js-chunks?style=flat-square&label=js-chunks&color=e8511e"
-            alt="js-chunks version on npm"
-            width={124}
-            height={24}
-            className="h-6 w-auto"
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://img.shields.io/crates/v/rs-chunks?style=flat-square&label=rs-chunks&color=e8511e"
-            alt="rs-chunks version on crates.io"
-            width={128}
-            height={24}
-            className="h-6 w-auto"
-          />
-        </div>
+        <RegistryBadges />
         <EnvCard />
       </Section>
 
@@ -127,44 +71,7 @@ export default function BenchmarksPage() {
         title="Milliseconds, not seconds"
         description="Native Rust parsing with no ML model loading and no per-element Python overhead. Pooled over all 473 files."
       >
-        <div className="mx-auto mb-8 grid max-w-3xl gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-brand/30 bg-surface p-6 text-center">
-            <div className="font-mono text-3xl font-semibold tabular-nums text-brand">
-              {speedPooled.headline.msPerFile}
-              <span className="ml-1 text-base text-muted-foreground">ms</span>
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">per file</div>
-          </div>
-          <div className="rounded-xl border border-border bg-surface p-6 text-center">
-            <div className="font-mono text-3xl font-semibold tabular-nums text-foreground">
-              {speedPooled.headline.filesPerSec.toLocaleString()}
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">files / sec</div>
-          </div>
-          <div className="rounded-xl border border-border bg-surface p-6 text-center">
-            <div className="text-gradient-brand font-mono text-3xl font-semibold tabular-nums">
-              89–528×
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              faster than peers
-            </div>
-          </div>
-        </div>
-        <div className="mx-auto max-w-2xl rounded-xl border border-border bg-surface p-6">
-          <StatBars
-            rows={speedPooled.rows.map((r) => ({
-              label: r.tool,
-              value: r.filesPerSec,
-              highlight: r.highlight,
-            }))}
-            unit="files/s"
-          />
-          <p className="mt-4 text-xs text-muted-foreground">
-            Higher is better. Docling and Unstructured also errored on ~half the
-            corpus, so their median is measured over an easier subset — generous
-            to them, not harsh.
-          </p>
-        </div>
+        <SpeedPooled />
       </Section>
 
       {/* Speed by category */}
@@ -184,49 +91,7 @@ export default function BenchmarksPage() {
         title="Precise typed chunks"
         description="Is the content_type label actually right? Ground truth extracted directly from source markup, independent of every tool."
       >
-        <div className="mx-auto max-w-lg overflow-x-auto rounded-xl border border-border bg-surface">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs text-muted-foreground">
-                <th className="px-4 py-3 text-left font-medium">
-                  Precision
-                </th>
-                <th className="px-3 py-3 text-right font-medium text-foreground">
-                  chunk-engine
-                </th>
-                <th className="px-3 py-3 text-right font-medium">Docling</th>
-                <th className="px-4 py-3 text-right font-medium">Unstructured</th>
-              </tr>
-            </thead>
-            <tbody className="font-mono tabular-nums">
-              {contentTypePrecision.map((r) => (
-                <tr
-                  key={r.type}
-                  className="border-b border-border/60 last:border-0"
-                >
-                  <td className="px-4 py-3 font-sans font-medium capitalize">
-                    {r.type}
-                  </td>
-                  <td className="px-3 py-3 text-right font-semibold text-brand">
-                    {r.py.toFixed(2)}
-                  </td>
-                  <td className="px-3 py-3 text-right text-muted-foreground">
-                    {r.docling.toFixed(3)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-muted-foreground">
-                    {r.unstructured.toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mx-auto mt-4 max-w-lg text-center text-sm text-muted-foreground">
-          Perfect precision on tables and code. Docling over-labels code blocks
-          (0.48 precision — many non-code chunks tagged &ldquo;code&rdquo;).
-          On headings and lists chunk-engine favours fewer, higher-value typed units
-          — it under-labels at the anchor level but retains ~99% of the content.
-        </p>
+        <PrecisionTable />
       </Section>
 
       {/* Metadata richness (§4) */}
@@ -246,32 +111,7 @@ export default function BenchmarksPage() {
         title="Doesn't fragment sentences either"
         description="The one axis text-splitters compete on. Verified by hand across every mode."
       >
-        <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-brand/30 bg-surface p-6 text-center">
-            <div className="font-mono text-3xl font-semibold tabular-nums text-brand">
-              {proseIntegrity.sentenceSplits}
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              genuine sentence splits, any mode
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-surface p-6 text-center">
-            <div className="font-mono text-3xl font-semibold tabular-nums text-foreground">
-              {proseIntegrity.slidingWindowParity.toFixed(3)}
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              sliding_window answer-preservation
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-surface p-6 text-center">
-            <div className="font-mono text-3xl font-semibold tabular-nums text-muted-foreground">
-              {proseIntegrity.competitorRange}
-            </div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              text-splitter range (at parity)
-            </div>
-          </div>
-        </div>
+        <ProseIntegrity />
       </Section>
 
       {/* Coverage matrix (formats × modes) */}
@@ -301,22 +141,7 @@ export default function BenchmarksPage() {
         title="What we didn't hide"
         description="The same report surfaces every defect it found. Credibility comes from disclosing them, not burying them."
       >
-        <ul className="mx-auto max-w-2xl space-y-3">
-          {knownLimitations.map((l) => (
-            <li
-              key={l}
-              className="flex items-start gap-3 rounded-lg border border-border bg-surface p-4 text-sm text-foreground/90"
-            >
-              <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              {l}
-            </li>
-          ))}
-        </ul>
-        <p className="mx-auto mt-6 max-w-2xl text-center text-sm text-muted-foreground">
-          Every number here is from a single real run on the environment above —
-          no sampling, no cherry-picking. Absolute figures are Apple-Silicon
-          specific; a neutral x86 cloud run is a planned follow-up.
-        </p>
+        <Limitations />
       </Section>
     </>
   );

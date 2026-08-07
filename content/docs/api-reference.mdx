@@ -61,16 +61,31 @@ function getChunks(source, opts: { listImages: true }): Promise<{ chunks: Chunk[
 function getMarkdown(source, opts?): Promise<string>;
 function getMarkdown(source, opts: { listImages: true }): Promise<{ markdown: string; images: ChunkImage[] }>;
 function streamChunks(source, opts?): AsyncIterable<Chunk>;
+
+// Host-parsed PDF: for markdown some other parser produced
 function chunkPdfMarkdown(markdown, totalPages, opts?): Promise<Chunk[]>;
+function chunkPdfMarkdownWithImages(
+  markdown, images: ChunkImage[], totalPages, opts?
+): Promise<{ chunks: Chunk[]; images: ChunkImage[] }>;
+function normalizePdfMarkdown(markdown): Promise<string>;
+
+// Errors
+type ChunkErrorKind = "unsupported" | "invalid-arg" | "parse" | "io" | "unknown";
+class ChunkError extends Error { readonly kind: ChunkErrorKind }
 ```
 
 `source` may be a string path (Node/Bun), `Uint8Array`, `ArrayBuffer`, `Buffer`,
-or `Blob`. WASM is instantiated lazily and cached on first call.
+or `Blob`. WASM is instantiated lazily and cached on first call. Every failure
+is thrown as a `ChunkError` — see [Error Handling](/docs/error-handling).
 
 <Callout type="info">
   `contentType` is camelCase here (the WASM core emits `content_type`).
-  `.pdf` sources are parsed by the engine itself; `chunkPdfMarkdown` is for
-  markdown you already have from some other parser.
+  `.pdf` sources are parsed by the engine itself. The three `PdfMarkdown`
+  functions are for callers who already parsed a PDF with some other tool:
+  `chunkPdfMarkdown` chunks that markdown, `chunkPdfMarkdownWithImages` does the
+  same with host-supplied image bytes (each `name` matching an `![](name)`
+  reference), and `normalizePdfMarkdown` returns just the normalised markdown
+  string — what `getMarkdown` would have emitted.
 </Callout>
 
 ## Rust — rs-chunks

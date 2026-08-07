@@ -12,11 +12,15 @@ page.
 
 ## Python — py-chunks
 
-- **Python 3.9+**. The Rust engine ships compiled inside the wheel.
+- **Python 3.9+**. The Rust engine ships compiled inside the wheel, built
+  against CPython's stable ABI — one binary wheel per platform covers every
+  supported Python, so there is no source build and no Rust toolchain needed.
 - **No runtime dependencies.** PDF *parsing* is pure Rust inside the wheel, and
   PDFium — needed only to rasterise a scanned PDF's pages when it carries no
   embedded page image of its own — is vendored into the same wheel. `pip install
   py-chunks` pulls nothing else.
+- **Typed.** The package ships a `py.typed` marker and stubs covering the whole
+  compiled surface, so mypy and pyright see full annotations.
 
 ```bash
 pip install py-chunks
@@ -24,14 +28,39 @@ pip install py-chunks
 
 ## JavaScript — js-chunks
 
-- **Node 18+**, Bun, Deno, and browsers/bundlers. The engine is compiled to
-  **WASM** and instantiated lazily on first call.
+- **Node 18+**, Bun, Deno, and browsers. The engine is compiled to **WASM** and
+  instantiated lazily on first call.
 - Filesystem-path sources are Node/Bun only — elsewhere pass bytes with a
   `filename`.
+- **ESM-only.** `require("js-chunks")` works on Node ≥ 20.19 (which can
+  `require()` ESM); on older Node use `import` or dynamic `import()`.
 
 ```bash
 npm install js-chunks
 ```
+
+### Bundlers (vite/webpack)
+
+The default `js-chunks` entry detects its runtime and loads the right WASM build
+itself — that covers Node, Bun, Deno, and unbundled browser ESM. It resolves the
+web build through a dynamic import deliberately hidden from bundlers, so a
+**bundled** app would neither bundle the glue nor copy the `.wasm` binary.
+Bundled apps import the web build explicitly and serve the wasm as an asset:
+
+```ts
+import initWasm, * as engine from "js-chunks/web";
+// vite: resolve the wasm binary to a served asset URL
+import wasmUrl from "js-chunks/web/chunks_wasm_bg.wasm?url";
+
+await initWasm({ module_or_path: wasmUrl }); // once, cached
+const chunks = engine.getChunks(bytes, "report.docx", "default", 3, 1, 3, 15);
+```
+
+`js-chunks/web` is the raw wasm-bindgen surface: positional arguments,
+snake_case chunk fields (`content_type`), and an `init` default export to await
+before the first call. If your bundler already rewrites
+`new URL("chunks_wasm_bg.wasm", import.meta.url)` inside the glue, a bare
+`await initWasm()` works too — the explicit `?url` form is the dependable one.
 
 <Callout type="info" title="PDF in JavaScript">
   `.pdf` works out of the box — no peer dependency. PDF is parsed by the engine

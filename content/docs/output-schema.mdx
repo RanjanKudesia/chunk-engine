@@ -32,19 +32,23 @@ that **JavaScript exposes `contentType` (camelCase)** while Python and Rust use
 
 ## Chunk size
 
-Chunks target a maximum of **1,200 characters**. Two things widen that, both
-deliberately:
+Chunks target a maximum of **1,200 characters**, widening to **1,550** when a
+short trailing paragraph is merged in rather than emitted as an orphan
+fragment. The bound is deliberate: a single 10,000-character chunk breaks the
+size contract every embedding model depends on, so **oversized structures are
+split, not kept whole** — a table larger than the budget becomes a run of
+`table` chunks, an oversized list or code block a run of bounded `bullet_list`
+/ `code_block` chunks.
 
-- A chunk may reach **1,550** characters when a short trailing paragraph is
-  merged into it rather than emitted as an orphan fragment.
-- **Indivisible units are never split**, however long they are: a table (see
-  `table` below — "kept whole"), a CSV/TSV row, a spreadsheet row, and a
-  rendered JSON record. Splitting one destroys the thing it represents, so the
-  bound gives way instead. A wide spreadsheet row or a large table can
-  therefore produce a chunk well past 1,550.
+What the engine never does is cut through an **atomic unit**: a table split
+always lands between rows, a list split between items, a code split between
+lines — never mid-row or mid-item. The one case where a chunk exceeds the
+bound is a single atomic unit that is itself wider than the budget — one very
+wide table, CSV/TSV, or spreadsheet row lands whole in one oversized chunk,
+because slicing it would destroy the thing it represents.
 
-Everything else — prose, lists, headings — is bounded: an over-long paragraph is
-cut at a sentence, and a sentence with no boundary at all is cut at a word.
+Prose is always bounded: an over-long paragraph is cut at a sentence, and a
+sentence with no boundary at all is cut at a word.
 
 ## content_type values
 
@@ -57,7 +61,7 @@ The `content_type` tells you what a chunk is. Prose and markup formats emit:
 | `long_single_paragraph` | A single long paragraph chunk. |
 | `short_disconnected_paragraph` | A short, standalone paragraph. |
 | `bullet_list` | A bulleted or numbered list. |
-| `table` | A table, kept whole. |
+| `table` | A table, or one row-aligned segment of an oversized table. |
 | `code_block` | A fenced/indented code block. |
 | `image` | An extracted image (when `list_images=True`). |
 
