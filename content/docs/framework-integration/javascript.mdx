@@ -127,6 +127,169 @@ export async function POST({ request }) {
 }
 ```
 
+## Streaming an NDJSON response
+
+Forward each chunk as a newline-delimited JSON record instead of buffering one
+big array. Two shapes cover almost every JS framework: a web `ReadableStream`
+(Next.js, Hono, SvelteKit, Deno, Bun, Workers) and a Node stream write loop
+(Express, Fastify, NestJS).
+
+### Next.js route handler (web `ReadableStream`)
+
+```ts
+// app/api/chunk/stream/route.ts
+import { NextRequest } from "next/server";
+import { streamChunks, ChunkError } from "js-chunks";
+
+export const runtime = "nodejs";
+
+export async function POST(req: NextRequest) {
+  const form = await req.formData();
+  const file = form.get("document") as File;
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const chunk of streamChunks(file, { mode: "semantic" })) {
+          controller.enqueue(encoder.encode(JSON.stringify(chunk) + "\n"));
+        }
+      } catch (e) {
+        // Headers are already sent — report the failure as a final record
+        // rather than trying to change the status code.
+        const message = e instanceof ChunkError ? e.message : String(e);
+        controller.enqueue(encoder.encode(JSON.stringify({ error: message }) + "\n"));
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "content-type": "application/x-ndjson" },
+  });
+}
+```
+
+### Express (Node stream)
+
+```ts
+import express from "express";
+import multer from "multer";
+import { streamChunks, ChunkError } from "js-chunks";
+
+const app = express();
+const upload = multer();
+
+app.post("/chunk/stream", upload.single("document"), async (req, res) => {
+  res.setHeader("content-type", "application/x-ndjson");
+  res.setHeader("cache-control", "no-cache");
+
+  try {
+    const chunks = streamChunks(req.file.buffer, {
+      filename: req.file.originalname,
+      mode: "semantic",
+    });
+    for await (const chunk of chunks) {
+      // Respect backpressure: wait for drain if the socket is full.
+      if (!res.write(JSON.stringify(chunk) + "\n")) {
+        await new Promise((resolve) => res.once("drain", resolve));
+      }
+    }
+  } catch (e) {
+    const message = e instanceof ChunkError ? e.message : String(e);
+    res.write(JSON.stringify({ error: message }) + "\n");
+  } finally {
+    res.end();
+  }
+});
+```
+
+<Callout type="warn" title="What JS streaming does and doesn't give you">
+  `streamChunks` in js-chunks computes the **entire** chunk array before it
+  yields the first item — the WASM boundary is a synchronous full parse. So this
+  handler starts writing only after chunking finishes; it does not lower peak
+  memory, and it does not make the first byte arrive sooner than `getChunks`
+  would have.
+
+  What it *does* give you is a response the client can consume incrementally
+  (useful when the client is slow or wants to render progressively) and a
+  natural place to apply backpressure. See [Streaming](/docs/streaming) for the
+  full per-runtime picture.
+</Callout>
+
+## Errors
+
+Every failure js-chunks raises is a `ChunkError` — an `Error` subclass carrying
+a `kind`. There are no gaps in that: engine failures, unsupported extensions,
+bad arguments and host filesystem errors all arrive as `ChunkError`, so a single
+`catch` maps cleanly onto HTTP status codes. (One *format* skips argument
+validation instead of raising — see the note below the example.)
+
+```ts
+import { getChunks, ChunkError } from "js-chunks";
+
+app.post("/chunk", upload.single("document"), async (req, res) => {
+  try {
+    const chunks = await getChunks(req.file.buffer, {
+      filename: req.file.originalname,
+    });
+    res.json({ chunks });
+  } catch (e) {
+    if (e instanceof ChunkError) {
+      const status = {
+        unsupported: 415,     // Unsupported Media Type
+        "invalid-arg": 400,   // Bad Request
+        parse: 422,           // Unprocessable Entity
+        io: 500,              // includes an unreadable path (ENOENT/EACCES)
+        unknown: 500,
+      }[e.kind];
+      return res.status(status).json({ error: e.message, kind: e.kind });
+    }
+    throw e;   // not a ChunkError — a genuine bug, let it surface
+  }
+});
+```
+
+<Callout type="info" title="`kind` is a clean argument/parse split">
+  `overlap >= windowSize`, `windowSize = 0` and `sentencesPerChunk = 0` are
+  validated inside the engine and arrive as `kind: "invalid-arg"` for every
+  format and on both the path and the bytes route — so the 400-vs-422 split
+  above is accurate without any message matching.
+
+  **EPUB participates too, as of the current build.** It used to be the one
+  format whose chunkers skipped the shared range check, so bad window or
+  sentence arguments returned an **empty array** instead of raising — in
+  py-chunks as well, so it was never a JavaScript-only quirk. It now raises
+  `ChunkError` with `kind: "invalid-arg"` like every other format, before the
+  book is parsed, so an EPUB upload needs no hand-written pre-check and an
+  empty result is no longer ambiguous. See
+  [Error Handling](/docs/error-handling).
+</Callout>
+
+## Serverless & bundle size
+
+The WASM binary is **~2.5 MB** (`chunks_wasm_bg.wasm`, identical in the Node and
+web builds); the JS wrapper is a few kilobytes on top. That matters in three
+places:
+
+- **Lambda / Vercel / Cloud Functions.** 2.5 MB fits comfortably inside a zipped
+  deployment package. The module is instantiated on the **first call**, not at
+  import, and cached from then on — measured at ~9 ms on a warm local Node 22,
+  so it is a real but small cold-start cost. Warm it at module scope if you care:
+
+  ```ts
+  // module scope — runs once per container, not per request
+  await getChunks(new Uint8Array([0x23]), { filename: "warm.md" }).catch(() => {});
+  ```
+- **Edge runtimes.** Use `export const runtime = "nodejs"`. The auto-loader
+  takes the Node path via `createRequire`; edge runtimes do not provide it.
+- **Browser bundles.** The bundler-invisible dynamic import means a *bundled*
+  browser app must import `js-chunks/web` explicitly and serve
+  `chunks_wasm_bg.wasm` as an asset — see
+  [Installation](/docs/installation#bundlers-vitewebpack). Lazy-load it behind a
+  route split; 2.5 MB in your main bundle is not what you want.
+
 ## Browser
 
 There's no server round-trip needed — pass the `File` from an
@@ -148,5 +311,5 @@ client-side in WASM, and the file never leaves the browser.
   `.pdf` works with no extra install — the engine parses PDF in WASM. If you
   already have PDF markdown from another parser, chunk it with
   `chunkPdfMarkdown(markdown, totalPages)`. See
-  [Installation](/docs/installation#javascript--js-chunks).
+  [Installation](/docs/installation#platform-details).
 </Callout>

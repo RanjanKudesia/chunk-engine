@@ -1,6 +1,6 @@
 ---
 title: Supported Formats
-description: 36 formats across Office, PDF, web, data, email, eBooks, and notebooks — with availability and image support.
+description: All 36 file extensions the engine handles, the modes each supports, Markdown conversion, and image extraction.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -9,35 +9,31 @@ py-chunks handles **36 file extensions** through one API. Dispatch is by file
 extension, so the extension (or the `filename` you pass with bytes) must be
 correct.
 
-<Callout type="info" title="Availability">
-  **Stable** = long-confirmed in the published packages. **New** = present in the
-  engine source / latest builds; it may not be in your installed version yet —
-  upgrade to pick it up (`pip install -U py-chunks`, `npm i js-chunks@latest`,
-  `cargo update`). All 36 formats are supported by the shared engine; the
-  published package descriptions may document a subset.
+<Callout type="info" title="All 36 ship in the same release">
+  There is no tiering here. Every extension below is handled by the same shared
+  engine and is present in `py-chunks`, `js-chunks` and `rs-chunks` from 0.6.1
+  onward — the same code path, the same output. If a format seems missing,
+  you are on an older release: `pip install -U py-chunks`,
+  `npm i js-chunks@latest`, `cargo update`.
 </Callout>
 
 ## By family
 
-| Family | Extensions | Availability |
-| --- | --- | --- |
-| **Word** | `.docx` `.doc` | Stable |
-| | `.docm` `.dotx` `.dotm` | New |
-| **PowerPoint** | `.pptx` `.ppt` | Stable |
-| | `.potx` `.potm` `.ppsx` `.ppsm` | New |
-| **Spreadsheets** | `.xlsx` `.xls` | Stable |
-| | `.xlsm` `.xlsb` `.xltx` `.xltm` `.ods` | New |
-| **PDF** | `.pdf` | Stable |
-| **Web & Markup** | `.html` `.htm` `.md` | Stable |
-| | `.rtf` | New |
-| **OpenDocument** | `.odt` `.odp` | New |
-| **Plain & Data** | `.txt` `.csv` | Stable |
-| | `.tsv` `.json` `.jsonl` `.ndjson` | New |
-| **Email** | `.msg` `.eml` `.mbox` | New |
-| **eBooks & Notebooks** | `.epub` `.ipynb` | New |
+| Family | Extensions |
+| --- | --- |
+| **Word** | `.docx` `.doc` `.docm` `.dotx` `.dotm` |
+| **PowerPoint** | `.pptx` `.ppt` `.potx` `.potm` `.ppsx` `.ppsm` |
+| **Spreadsheets** | `.xlsx` `.xls` `.xlsm` `.xlsb` `.xltx` `.xltm` `.ods` |
+| **PDF** | `.pdf` |
+| **Web & Markup** | `.html` `.htm` `.md` `.rtf` |
+| **OpenDocument** | `.odt` `.odp` (and `.ods`, above) |
+| **Plain & Data** | `.txt` `.csv` `.tsv` `.json` `.jsonl` `.ndjson` |
+| **Email** | `.msg` `.eml` `.mbox` |
+| **eBooks & Notebooks** | `.epub` `.ipynb` |
 
-See [Format examples](/docs/format-examples) for real engine output on the
-extended formats (JSON, email, RTF, EPUB, notebooks, and OpenDocument).
+For what each of these actually emits — content types, metadata keys, and real
+output blocks per family — see the
+[Metadata Reference](/docs/metadata-reference).
 
 ## Chunking modes per format
 
@@ -80,16 +76,26 @@ the raw bytes in `MarkdownResult.images`.
 
 `list_images=True` extracts embedded images for: **DOC, DOCX (family), PPT,
 PPTX (family), XLSX (family — incl. ODS/XLSB, not XLS), HTML/HTM, PDF, EPUB,
-IPYNB, EML/MBOX, ODT/ODP.**
+IPYNB, EML/MBOX/MSG, ODT/ODP.**
 
-Formats **without** image support: CSV, TSV, TXT, MD, JSON, RTF, MSG, XLS.
+Formats **without** image support: CSV, TSV, TXT, MD, JSON/JSONL/NDJSON, RTF,
+XLS.
+
+<Callout type="info" title=".msg does extract images">
+  Outlook `.msg` attachments are detected by filename, then MIME type, then
+  magic bytes — Outlook frequently stores a real JPEG as
+  `application/octet-stream`, so filename alone is not enough.
+</Callout>
 
 Only web-renderable formats are extracted (`.png`, `.jpg`, `.jpeg`, `.gif`,
 `.webp`); vector/metafile payloads (`.emf`, `.wmf`, `.pict`, `.dib`, `.tiff`) are
-silently skipped. Images are keyed by a stable **content hash**, so a picture
-that appears several times is stored once but referenced at each occurrence. PDF
-images are page-scoped and always re-encoded to `.png`. Image extraction is
-batch-only — see [Streaming](/docs/streaming).
+silently skipped. Most formats key images by a stable **content hash**, so a
+picture that appears several times is stored once but referenced at each
+occurrence. **PDF is the exception**: its images are named positionally
+(`image_p3_1.png`) and always re-encoded to `.png`; EPUB, IPYNB and the email
+formats keep the source filename. Image extraction is batch-only — see
+[Streaming](/docs/streaming). Full per-format key lists are in the
+[Metadata Reference](/docs/metadata-reference#image-chunks).
 
 ## Format-specific notes
 

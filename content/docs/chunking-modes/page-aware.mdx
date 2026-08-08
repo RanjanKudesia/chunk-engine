@@ -1,38 +1,137 @@
 ---
 title: page_aware
-description: Preserve the document's page (or slide) layout for page-referenced citations.
+description: Chunks aligned to pages or slides — and which formats actually have a page number to give you.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-`page_aware` preserves the document's original page layout, keeping chunks
-aligned to pages. This is what you want when citations need to reference a page
-number — legal, financial, or academic documents.
+`page_aware` aligns chunks to page boundaries. It is the mode you reach for
+when a citation has to say "see p. 12".
 
-```python
-from py_chunks import get_chunks
+Whether it can actually tell you *which* page depends entirely on the format.
+Read the next section before you build a page-citation feature on it.
 
-chunks = get_chunks("contract.pdf", mode="page_aware")
-```
+<LangSelect />
+
+## Which formats have real pages
+
+A page number is only meaningful if the file records one. Three groups:
+
+| Group | Formats | What you get |
+| --- | --- | --- |
+| **Real page identity** | DOCX (+ DOCM/DOTX/DOTM), DOC (when the file declares hard breaks) | `page_number` on every chunk, plus `page_break_type` naming the marker it came from |
+| **Real slide identity** | PPTX (+ POTX/POTM/PPSX/PPSM), PPT, ODP | slide numbers — `slide_range` / `slide_count` (PPTX family), `slide_number` (PPT, ODP). PPT additionally sets `page_number` = slide number |
+| **Synthesized boundaries** | PDF, Markdown, HTML, TXT, JSON/JSONL/NDJSON, EML/MBOX, MSG, ODT, RTF, EPUB, IPYNB | **no `page_number`.** Boundaries are invented by the chunker; `page_break_type` is `heading_boundary` or `estimated` |
+
+<Callout type="warn" title="PDF page_aware does NOT emit a page number">
+  This is the one that surprises people. A PDF obviously has pages, and
+  `document_metadata.total_pages` reports how many — but the `page_aware`
+  chunker runs over the extracted markdown, not the page grid, so its chunks
+  carry `page_break_type: "estimated"` or `"heading_boundary"` and **no
+  `page_number` key at all**. Verified on `arxiv_1301.3781_word2vec.pdf`
+  (12 pages → 41 chunks, zero of them with a page number).
+
+  If you need PDF page citations today, extract per page yourself with
+  `list_images` / the markdown route, or keep your own page offsets. Do not
+  index `chunk["metadata"]["page_number"]` for PDF — the key is not there.
+</Callout>
+
+## Real input → real output (DOCX)
+
+Run against `all_round.docx`, a five-page Word document, at default parameters:
+
+<LangCode id="modePageAwareDocx" />
+
+The `page_break_type` tells you how much to trust each `page_number`:
+
+| Value | Source | Real? |
+| --- | --- | --- |
+| `explicit` | `<w:br w:type="page"/>` — an author-inserted hard break | yes |
+| `section` | a `<w:sectPr>` section boundary | yes |
+| `rendered` | `<w:lastRenderedPageBreak/>` — where Word broke the page the last time it laid the document out | yes, as of the last save |
+| `estimated` | no marker in the run; the chunker closed the page after `paragraphs_per_page` paragraphs | **no** — this one is synthesized |
+
+So even within DOCX, a page number is exactly as real as its `page_break_type`.
+
+For a format with no pages at all, the same mode falls back entirely to
+synthesized boundaries — here on Markdown:
+
+<LangCode id="modePageAware" />
+
+## Units and formats
+
+The "page" the chunker builds differs by family:
+
+| Family | Unit | Boundary rule |
+| --- | --- | --- |
+| DOCX, DOC | paragraph | file's own break markers; `paragraphs_per_page` only as fallback |
+| PPTX family | slide | `paragraphs_per_page` slides per chunk (see the parameter note below) |
+| PPT | slide | one chunk per slide |
+| ODP | markdown block | each slide renders as a heading, so the heading boundary *is* the slide boundary; `slide_number` rides along on every chunk |
+| Markdown, HTML, TXT, PDF, EPUB, RTF, EML/MBOX, MSG, ODT, JSON, IPYNB | markdown block | heading boundaries, else `paragraphs_per_page` blocks |
+| Spreadsheets (XLSX family) | row | whole-sheet regions, capped at 2,000 chars → `content_type: "sheet_region"` |
+| CSV / TSV | row | `paragraphs_per_page` rows per chunk → `content_type: "row_group"` |
 
 ## Parameters
 
-| Parameter | Default | Notes |
+| Parameter | Default | Meaning |
 | --- | --- | --- |
-| `paragraphs_per_page` | `15` | Paragraphs grouped per page-sized chunk. |
+| `paragraphs_per_page` | `15` | Units per page-sized chunk. **Slides** per chunk for PPTX; **rows** per chunk for CSV/TSV. Must be &gt; 0. |
 
-<Callout type="info" title="PowerPoint">
-  For PPTX, `page_aware` defaults to `5` and means **slides per chunk**. PPTX
-  also accepts `slides_per_chunk`, which takes precedence when set.
+<Callout type="info" title="`paragraphs_per_page = 0` is rejected in `page_aware` — including the spreadsheets that ignore the value">
+  Zero raises everywhere this mode is available: `ValueError` in Python,
+  `kind: "invalid-arg"` in JavaScript, `ChunkError::InvalidArg` in Rust. The
+  **XLSX family** is included even though it paginates by whole-sheet regions
+  and never reads the number — `paragraphs_per_page=1` and `=100` return the
+  same chunks — because silently accepting a value that cannot mean anything is
+  worse than refusing it. The sentence names the knob the format actually uses,
+  so CSV/TSV report `rows_per_chunk must be greater than 0`.
+
+  The check is **scoped to `page_aware`**, the only mode that reads the
+  parameter. `get_chunks(path, mode="default", paragraphs_per_page=0)` is
+  accepted, exactly as `window_size=0` is accepted outside `sliding_window`.
 </Callout>
 
-## content_type
+<Callout type="warn" title="PPTX: there is no `slides_per_chunk` here">
+  Through `get_chunks` / `getChunks` / `chunks_rs::get_chunks`, PPTX receives
+  `paragraphs_per_page` and interprets it as slides per chunk — so the default
+  is **15**, not 5. On an eight-slide deck that produces exactly **one** chunk.
+  Pass `paragraphs_per_page=1` for one chunk per slide.
 
-Chunks carry the `content_type` `page_aware`. Metadata typically includes the
-page number (or slide range) so you can cite locations back to the source.
+  `slides_per_chunk` (and the default of 5) exist only on Python's
+  format-specific `chunk_pptx()` helper, where they are documented as the
+  preferred alias for `paragraphs_per_page`. There is no such parameter in
+  js-chunks or rs-chunks, and none through the unified entry point in any SDK.
+</Callout>
+
+## What it emits
+
+`page_aware` does **not** emit only `page_aware` chunks.
+
+| Format | `content_type` values emitted |
+| --- | --- |
+| Markdown-family — Markdown, HTML, TXT, PDF, EPUB, RTF, EML/MBOX, MSG, ODT, ODP, JSON, IPYNB | `page_aware` **plus a `heading` chunk for every heading in the document** |
+| DOCX, DOC, PPTX family, PPT | `page_aware` only — heading text sits inside the page chunk |
+| Spreadsheets | `sheet_region` |
+| CSV / TSV | `row_group` |
+
+JSON/JSONL render no headings of their own, so a `heading` chunk appears there
+only if a field's value happens to contain Markdown heading syntax.
+
+Measured: `arxiv_1301.3781_word2vec.pdf` → 31 `page_aware` + 10 `heading`;
+`prose_heavy.md` → 10 `page_aware` + 10 `heading`; `all_round.docx` → 5
+`page_aware` and nothing else.
+
+## Metadata
+
+Every key this mode writes, per format, is listed in the
+[Metadata Reference](/docs/metadata-reference) — including which formats carry
+`page_number`, `page_break_type`, `slide_range`, and `total_pages`.
 
 ## When to use it
 
-- Page-referenced citations ("see p. 12").
-- Preserving layout for documents where the page is a meaningful unit.
-- Slide-scoped chunking of presentations.
+- Page-referenced citations from **DOCX or DOC** — the formats that carry a
+  real page number.
+- Slide-scoped chunking of presentations (set `paragraphs_per_page=1`).
+- A coarse, roughly-even split of a long prose document when you don't care
+  that the boundaries are invented.

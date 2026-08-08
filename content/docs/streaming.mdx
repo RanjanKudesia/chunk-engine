@@ -1,79 +1,151 @@
 ---
 title: Streaming
-description: Yield chunks one at a time with bounded memory — which modes stream, the per-format memory profile, and how output stays byte-identical to batch.
+description: What streaming actually does in each SDK — which three formats parse incrementally, which runtimes deliver it, and what the other 33 formats give you instead.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Every format streams. `stream_chunks` / `streamChunks` (and per-format
-`stream(...)` in Rust) yield one chunk at a time so you can forward, persist, or
-embed each chunk before the whole document is parsed.
+`stream_chunks` / `streamChunks` (and per-format `stream(...)` in Rust) hand you
+chunks one at a time instead of one list at the end. That lets you forward,
+persist or embed each chunk as it arrives.
 
-## When to use streaming
+<LangSelect />
 
-- Processing large documents where you want to act on each chunk immediately.
-- Piping chunks into a queue, vector store, database, or an HTTP response.
-- Keeping memory bounded regardless of document size — for the formats that
-  support true incremental parsing (see the profile column below).
+<Callout type="warn" title="Streaming is not a memory guarantee">
+  This page used to promise bounded memory for every format. That was wrong, and
+  it is the kind of wrong that shows up as an OOM in production, so here is the
+  short version:
 
-<LangCode id="streaming" />
+  - **Genuinely incremental parsing exists for three formats — PDF, XLSX and
+    CSV — and only in native Rust.** Python gets two of them (PDF, XLSX).
+  - **JavaScript's `streamChunks` computes the entire chunk array first, then
+    yields from it.** It is an ergonomic wrapper over `getChunks`. It gives you
+    *zero* memory benefit for any format.
+  - Every other format's `stream()` is literally
+    `chunk(...).into_iter()` — the document is parsed in full, then drained.
 
-<Callout title="Byte-identical to batch">
-  Streaming output equals the batch call for every format and every supported
-  mode — `list(stream_chunks(...)) == get_chunks(...)`. This is enforced by the
-  engine's parity tests, so you can switch between batch and streaming without
-  changing results.
+  What *is* true everywhere, and is the real reason to use streaming: **lazy
+  emission**. You get to overlap your embedding / upsert / HTTP-write work with
+  iteration instead of waiting for a complete list, and you can stop early.
 </Callout>
 
-## Support matrix
+## Three classes of streaming
 
-The streamable modes match each format's batch modes. The **memory profile**
-describes how much of the document must be held at once — a property of the
-parsing algorithm, so it holds across Python, JavaScript, and Rust.
-
-| Format | Streamable modes | Memory profile |
+| Class | What it means | Peak memory |
 | --- | --- | --- |
-| **PDF** | All 7 | **Incremental** for `default` — pages are read at the rate you consume chunks, so peak memory is one page rather than the document. Parse-once-then-drain for the other six modes, with a **free construction**: the work runs on a worker thread (native) so the call returns immediately, and chunks arrive through a bounded channel rather than as one materialized collection. See the note below. |
-| **Markdown / HTML / TXT** | All 7 | **Incremental** for `structural` / `semantic` (O(blocks)); parse-once-then-drain for the other four modes. |
-| **DOCX** | All 7 | Parse-once-then-drain — the document is parsed a single time, then chunks emit lazily. Peak ≈ file size + chunk vector. |
-| **DOC** (Word 97–2003) | All 7 | Parse-once-then-drain (binary piece-table reconstruction up front). |
-| **PPT** (PowerPoint 97–2003) | All 7 | Parse-once-then-drain (slide text extracted up front). |
-| **PPTX** | All 7 | Parse-once-then-drain — the ZIP must be read in full before the first chunk. |
-| **XLSX / XLS** | All 6 | **Incremental** for `row` / `sliding_window`; parse-once-then-drain for `table` / `sheet` / `page_aware` / `semantic` (they need whole-sheet analysis first). |
-| **CSV / TSV** | All 3 | **Incremental** — true line-by-line; `sliding_window` uses an O(window\_size) rolling buffer and never loads the full file. |
+| **Incremental** | The parser reads only as far as the chunk you asked for. Breaking early skips the rest of the file. | ≈ one page / one sheet-row window |
+| **Deferred drain** | The whole document is parsed behind the iterator (on a worker thread where one is available), then chunks arrive one at a time through a channel. Construction returns immediately. | ≈ parsed document + channel depth |
+| **Eager drain** | The whole chunk list is built before the first item is yielded. Identical peak memory to the batch call. | ≈ parsed document + all chunks |
 
-<Callout type="info" title="Why only PDF's default mode is incremental">
-  It is the heading ranking that decides this, not pagination. `default` ranks
-  type sizes **within each page**, so a page can be parsed, chunked and dropped.
-  The other six modes rank sizes across the whole document, so their reader has
-  already read every page before it renders the first — no amount of chunker
-  work changes that, and claiming otherwise would be a promise the parser cannot
-  keep.
+## The matrix
 
-  Pagination is *not* the obstacle it looks like. The end of page 3 and the
-  start of page 4 are routinely one paragraph, and chunking each page separately
-  breaks the sentence at every boundary — measured on a 12-page paper, 71 chunks
-  instead of 66. `default` does not chunk pages separately: the chunker is fed
-  one continuous stream of markdown and finalizes a chunk only once the text
-  after it has arrived. Output stays byte-identical to `get_chunks` in all seven
-  modes.
+All 36 supported extensions, by runtime. **DEFAULT parameters assumed.**
+
+| Format (extensions) | Rust (native) | Python | JavaScript |
+| --- | --- | --- | --- |
+| **PDF** — `.pdf` | **Incremental** in `default` mode; **deferred drain** in the other six | same as Rust — the binding calls the engine's stream directly | **Eager drain** |
+| **Spreadsheets** — `.xlsx` `.xls` `.xlsm` `.xlsb` `.ods` `.xltx` `.xltm` | **Incremental** in `row` and `sliding_window`; eager drain in `table` / `sheet` / `page_aware` / `semantic` | same as Rust | **Eager drain** |
+| **CSV / TSV** — `.csv` `.tsv` | **Incremental** — a worker thread reads the file line by line through a `BufReader`; the file is never fully loaded¹ | **Eager drain** — the binding calls the engine's batch `csv::chunk`, not `csv::stream` | **Eager drain** |
+| **DOCX family** — `.docx` `.docm` `.dotx` `.dotm` | Eager drain | Eager drain | Eager drain |
+| **All other formats** — `.doc` `.ppt` `.pptx` `.potx` `.potm` `.ppsx` `.ppsm` `.md` `.html` `.htm` `.txt` `.rtf` `.epub` `.ipynb` `.json` `.jsonl` `.ndjson` `.eml` `.mbox` `.msg` `.odt` `.odp` | Eager drain | Eager drain | Eager drain |
+
+That is 36 extensions: 1 PDF + 7 spreadsheet + 2 delimited + 4 Word OOXML +
+22 in the last row.
+
+¹ Rust's CSV stream hands chunks to the consumer over an **unbounded** channel
+(PDF's is bounded at 64). The *file* is never fully read into memory, but a
+consumer slower than the reader can let produced chunks accumulate. If that
+matters, do your per-chunk work synchronously inside the loop rather than
+buffering.
+
+<Callout type="warn" title="Markdown, HTML and TXT do NOT stream incrementally">
+  An earlier version of this page claimed `structural` and `semantic` were
+  incremental for the markdown family. They are not, in any runtime. Their
+  `stream()` is `chunk(...).into_iter().map(Ok)` — a full parse, then a drain.
+  Peak memory for a 500 MB Markdown file is the same whether you call
+  `get_chunks` or `stream_chunks`.
 </Callout>
 
-<Callout type="info" title="Profiles, not runtimes">
-  "Incremental" is a property of the algorithm. In Python and native Rust the
-  incremental paths use background threads / state machines; the WASM build runs
-  the same logic synchronously. Either way, an incremental format never
-  materializes every chunk at once, while a parse-once format holds the parsed
-  document (not all chunks' worth of duplicated text) before emitting lazily.
+## The PDF exception, explained
+
+PDF's `default` mode is the one place a document format truly streams, and the
+reason is heading ranking, not pagination:
+
+- `default` ranks type sizes **within each page**, so a page can be parsed,
+  chunked and dropped. With a resumable builder a chunk costs only the pages it
+  came from — the first chunk of a 5,000-page PDF reads fewer than 10 of them.
+- The other six modes rank sizes **across the whole document**. Their reader has
+  read every page before it renders the first, and no amount of chunker work
+  changes that.
+
+For those six modes the engine still does the honest thing available to it: the
+parse runs on a worker thread and chunks arrive through a **bounded channel of
+depth 64**, so construction returns immediately and at most 64 chunks sit
+between producer and consumer. It is not bounded parse memory, but it is not a
+materialized list either.
+
+Pagination is *not* the obstacle it looks like. The end of page 3 and the start
+of page 4 are routinely one paragraph, and chunking each page separately breaks
+the sentence at every boundary — measured on a 12-page paper, 71 chunks instead
+of 66. `default` does not chunk pages separately: the chunker is fed one
+continuous stream of markdown and finalizes a chunk only once the text after it
+has arrived.
+
+## What JavaScript's `streamChunks` actually is
+
+```ts
+export async function* streamChunks(source, opts = {}) {
+  const chunks = await getChunks(source, { ...opts, listImages: false });
+  for (const chunk of chunks) yield chunk;
+}
+```
+
+That is the whole implementation. The WASM boundary is a synchronous full
+parse — there is no way to yield from inside it — so true streaming in
+JavaScript would be an engine redesign, not a wrapper change. This is a
+deliberate, documented decision, not an oversight.
+
+Use it for the ergonomics: `for await` reads better than indexing an array, you
+can `break` out of the loop, and your `await upsert(...)` overlaps with nothing
+in particular but keeps the code shape identical to the Python and Rust
+versions. Do **not** use it to survive a file that would OOM `getChunks`.
+
+<LangCode id="streamingAdvanced" />
+
+## Byte-identical to batch
+
+<Callout title="Guaranteed">
+  Streaming output equals the batch call for every format and every supported
+  mode — `list(stream_chunks(...)) == get_chunks(...)`, content and metadata.
+  This is enforced by dedicated parity tests
+  (`stream_matches_batch_for_every_mode` in the engine's `pdf_stream` and
+  `xlsx_stream` suites) precisely because the two paths are different code.
+  Spot-checked live across md/pdf/csv/xlsx/docx: equal every time.
 </Callout>
 
 ## Per-language shape
 
 | | Streaming call | Yields |
 | --- | --- | --- |
-| **Python** | `stream_chunks(source, mode=...)` | a `dict` iterator |
+| **Python** | `stream_chunks(source, mode=...)` | an iterator of `dict` |
 | **JavaScript** | `streamChunks(source, { mode })` | an `AsyncIterable<Chunk>` |
-| **Rust** | `chunks_rs::formats::*::stream(...)` | `Iterator<Item = Result<Chunk>>` |
+| **Rust** | `chunks_rs::formats::<fmt>::stream(...)` | `Iterator<Item = Result<Chunk>>` |
+
+<LangCode id="streaming" />
+
+<LangOnly id="rs">
+There is **no dispatch-level `stream`** in rs-chunks. `chunks_rs::get_chunks`
+has no streaming counterpart; you pick the format module yourself
+(`formats::pdf::stream`, `formats::csv::stream`, …). Each module's `stream`
+takes the same arguments as its `chunk`.
+</LangOnly>
+
+<LangOnly id="py">
+Python's `ChunkStreamIterator` converts each chunk into a Python `dict` **when
+you ask for it**, not up front. On a 5,000-page PDF that is the difference
+between materializing 71,111 dicts before you read the first and building them
+one at a time — a real saving even for the eager-drain formats, where the Rust
+side has already finished.
 
 Python also exposes source-specific streaming helpers —
 `stream_chunks_from_path`, `stream_chunks_from_bytes`,
@@ -81,33 +153,53 @@ Python also exposes source-specific streaming helpers —
 `stream_chunks_from_s3_presigned_url` — mirroring the batch helpers in
 [Input Sources](/docs/input-sources).
 
-```python
-# Python — stream a large PDF section-by-section into a vector store
-from py_chunks import stream_chunks
+Every one of the 36 supported extensions has a streaming entry point, so
+`NotImplementedError: Streaming not yet supported for {ext} files` is only
+reachable if a future format lands without one.
+</LangOnly>
 
-for chunk in stream_chunks("large.pdf", mode="section"):
-    heading = chunk["metadata"].get("section_heading", "")
-    store_in_db(heading, chunk["content"])
-```
+## Choosing between streaming and batch
+
+| Situation | Use |
+| --- | --- |
+| Large PDF, `default` mode, native Rust or Python | **stream** — genuinely bounded |
+| Large spreadsheet, `row` or `sliding_window`, native Rust or Python | **stream** — genuinely bounded |
+| Large CSV, native Rust | **stream** |
+| Large CSV, Python or JavaScript | either; memory is the same |
+| Any other format, any runtime | either; stream if the code reads better or you want to stop early |
+| You need images | **batch only** — see below |
+| Node/Bun/Deno, any format, worried about memory | neither helps; split the document upstream |
 
 <Callout type="warn" title="Images are batch-only">
   `list_images` / `listImages` is **not** available on the streaming entry
-  points — image extraction needs the whole document. Use
+  points — image extraction needs the whole document, and `streamChunks`
+  explicitly forces `listImages: false`. Use
   `get_chunks(..., list_images=True)` (or `getChunks(..., { listImages: true })`)
-  when you need image bytes. See [Supported Formats](/docs/supported-formats#image-extraction).
+  when you need image bytes. See
+  [Supported Formats](/docs/supported-formats#image-extraction).
 </Callout>
 
 ## Bytes sources & cleanup
 
+<LangOnly id="py">
 When you stream from bytes (e.g. a request body), Python writes a temporary file
-with the right extension and removes it when the iterator is exhausted or you
-exit early — use it as a context manager to guarantee cleanup:
+with the right extension — the engine's streaming paths are path-based — and
+removes it when the iterator is exhausted or you exit early. Use it as a context
+manager to guarantee cleanup:
 
 ```python
 with stream_chunks(data, filename="big.pdf", mode="section") as it:
     for chunk in it:
         ...
 ```
+</LangOnly>
 
-See [Framework Integration](/docs/framework-integration) for a FastAPI streaming
-response that forwards NDJSON as chunks are produced.
+<LangOnly id="js, rs">
+Byte sources need no temp file here: JavaScript's `streamChunks` goes through
+`getChunks`, which passes bytes straight to WASM, and Rust's per-format
+`stream(...)` is path-based by design — pass a path, or use the batch
+`chunk_from_bytes` if you only have bytes.
+</LangOnly>
+
+See [Framework Integration](/docs/framework-integration) for FastAPI, Express,
+Next.js and Axum handlers that forward NDJSON as chunks are produced.

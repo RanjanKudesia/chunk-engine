@@ -1,49 +1,152 @@
 ---
 title: Recipes
-description: Practical, copy-pasteable patterns for RAG ingestion, batch processing, and streaming — in Python, JavaScript, or Rust.
+description: End-to-end patterns — vector DB ingestion, LangChain and LlamaIndex adapters, incremental re-indexing, de-duplication, and choosing a mode.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Common end-to-end patterns. Every snippet is language-aware — use the tabs (or
-the global switcher in the nav) to see Python, JavaScript, or Rust.
+Practical patterns you can paste. Every snippet is language-aware — use the tabs
+or the switcher below to see Python, JavaScript, or Rust.
 
-## RAG ingestion
+<LangSelect />
 
-Chunk a document into semantically coherent passages, embed each one, and store
-it with its metadata. `semantic` mode gives the best embedding boundaries.
+## 1. Choose a mode first
+
+Everything downstream depends on this, and it is the cheapest thing to get
+right. chunk-engine has already parsed the document's structure; the mode
+decides how much of that structure survives into a chunk.
+
+| Your retrieval unit | Mode | Why |
+| --- | --- | --- |
+| "A coherent idea" — the usual RAG answer | `semantic` | Merges adjacent blocks while a lexical ladder says they continue each other; capped at 1,500 chars. |
+| "A whole documented topic" | `section` | One chunk per heading body. Headings come back as separate `heading` chunks — [pair them by `heading_path`](/docs/chunking-modes/section). |
+| "A paragraph / a table / a code block" | `default` / `structural` | Finest grain; each chunk is one element with its own `content_type`. |
+| "A fixed token budget" | `sentence` | Predictable size. Note lists and tables are **not** split. |
+| "Recall above all" | `sliding_window` | Overlapping windows; nothing falls in a crack. Costs index size. |
+| "A citable page" | `page_aware` | Only DOCX / DOC carry a real `page_number` — [check the table](/docs/chunking-modes/page-aware#which-formats-have-real-pages) before you build citations. |
+| A spreadsheet or CSV | `row` (the default) | Row-per-chunk; `table` / `sheet` / `semantic` group rows instead. |
+
+<Callout type="warn" title="Do not re-split chunk-engine output">
+  The most common mistake in a LangChain or LlamaIndex pipeline is to run
+  `RecursiveCharacterTextSplitter` (or a node parser) over these chunks. That
+  cuts the structure the engine just preserved, mid-table and mid-sentence. The
+  adapters below deliberately emit finished `Document` / `TextNode` objects with
+  no further splitting.
+</Callout>
+
+Start with `semantic` and change it only when a measurement says to. The full
+comparison is in [Chunking Modes](/docs/chunking-modes).
+
+## 2. RAG ingestion (the minimal shape)
+
+Chunk, embed, store. Ninety percent of pipelines are this plus error handling.
 
 <LangCode id="ragPipeline" />
 
-Each chunk carries typed `content_type` and `metadata` (section headings, page
-numbers, …), so you can filter results or show provenance at query time — see
-the [Output Schema](/docs/output-schema).
+Each chunk carries a typed `content_type` and a `metadata` object (section
+headings, page numbers, merge reasons, …), so you can filter results or show
+provenance at query time — see the [Output Schema](/docs/output-schema).
 
-## Batch a folder of mixed formats
+## 3. Ingest into a real vector database
+
+The same shape against an actual client: **pgvector** via psycopg 3 in Python,
+**Qdrant** in JavaScript and Rust.
+
+<LangCode id="vectorDbIngest" />
+
+Two things worth copying regardless of which store you use:
+
+- **Key on `(source, chunk_index)`** and upsert, so a re-run of the same
+  document replaces rather than duplicates. `chunk_index` here is the loop
+  position — not every format writes one into `metadata`
+  ([which ones do](/docs/output-schema)).
+- **Store the whole `metadata` object.** It costs almost nothing in a JSONB /
+  payload column and it is what lets you answer "which page was that on?"
+  later without re-chunking.
+
+## 4. LangChain
+
+A loader that is already chunked — no `TextSplitter` in the pipeline.
+
+<LangCode id="langchainAdapter" />
+
+<LangOnly id="rs">
+There is no LangChain binding for Rust. Use the vector-DB recipe above directly,
+or expose an HTTP endpoint from your Rust service and call it from a Python
+LangChain loader — see [Framework Integration → Rust](/docs/framework-integration/rust).
+</LangOnly>
+
+## 5. LlamaIndex
+
+<LangOnly id="py">
+Emit `TextNode`s straight from chunks and build the index with no
+transformations.
+</LangOnly>
+
+<LangCode id="llamaIndexAdapter" />
+
+<LangOnly id="js, rs">
+This adapter is Python-only — there is no js-chunks or rs-chunks LlamaIndex
+integration. Switch to Python above to read it, or use the LangChain.js loader
+in the previous recipe.
+</LangOnly>
+
+## 6. Incremental re-indexing
+
+Re-embedding an entire corpus because one file changed is the most expensive
+avoidable thing in a RAG pipeline. Give every chunk a stable identity —
+`metadata.source` + `chunk_index` — and a content hash, then only re-embed what
+moved.
+
+<LangCode id="incrementalReindex" />
+
+Three cases the code above covers, and you need all three:
+
+| Case | Detection | Action |
+| --- | --- | --- |
+| Chunk unchanged | hash matches | skip — no embedding call |
+| Chunk edited | hash differs, index known | re-embed and upsert |
+| Document got shorter | index ≥ new chunk count | **delete** the tail |
+
+That last one is the one people miss: if a document loses a section, the old
+chunks stay in the index forever and keep being retrieved.
+
+<Callout type="info" title="Chunk boundaries can move">
+  Editing paragraph 2 of a document can shift every chunk after it, so a
+  one-line edit may legitimately re-embed most of the file. That is correct
+  behaviour, not a bug in the hash — `semantic` and `section` boundaries depend
+  on the surrounding text. If you need edit-locality, `structural` produces the
+  most stable chunk identities because each chunk is one element.
+</Callout>
+
+## 7. De-duplicate a corpus
+
+Headers, footers, legal boilerplate and copy-pasted sections repeat verbatim
+across documents. In an index they crowd out real answers.
+
+<LangCode id="dedup" />
+
+Normalize whitespace and case before hashing, or "same paragraph, different line
+wrapping" will read as two distinct chunks. And never de-duplicate
+`sliding_window` output — the overlap it removes is the entire point of the
+mode.
+
+## 8. Batch a folder of mixed formats
 
 The same call handles every format, so a mixed folder just works. Isolate
 failures per file so one bad document doesn't halt the batch.
 
 <LangCode id="batchFolder" />
 
-## Stream a large file
+See [Error Handling](/docs/error-handling) for what each failure actually raises
+— including an unreadable path, which in JavaScript is a `ChunkError` with
+`kind: "io"` carrying Node's `ENOENT` message.
 
-`stream_chunks` / `streamChunks` yield chunks one at a time with constant
-memory — ideal for large files or streaming an HTTP response.
+## Also see
 
-<LangCode id="streaming" />
-
-<Callout type="info">
-  Streaming yields exactly the same chunks as the batch call, just incrementally.
-  In Rust, streaming is per-format via `chunks_rs::formats::*::stream(...)`.
-</Callout>
-
-## Convert to Markdown
-
-Get a Markdown string from any supported document (for previews, diffing, or
-feeding a Markdown-native tool).
-
-<LangCode id="markdown" />
-
-See also [Framework Integration](/docs/framework-integration) for FastAPI,
-Flask, Django, Express, and Axum handlers.
+- **Stream a large file** — one chunk at a time, and what that does and does not
+  buy you per runtime: [Streaming](/docs/streaming).
+- **Convert to Markdown** — `get_markdown` / `getMarkdown` for previews,
+  diffing, or feeding a Markdown-native tool: [Quick Start](/docs/quick-start).
+- **Web handlers** — FastAPI, Flask, Django, Express, Next.js, Axum:
+  [Framework Integration](/docs/framework-integration).

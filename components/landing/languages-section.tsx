@@ -4,12 +4,15 @@ import { languageList } from "@/data/languages";
 import { GitHubIcon } from "@/components/icons";
 import { InstallTabs } from "@/components/install-tabs";
 
-// Parity facts — from the rs-chunks README ("Parity" section), verified against
-// the chunk-engine reference engine over the full fixture corpus.
+// Parity facts — the three baselines in the workspace STATUS.md, each with a
+// harness that reproduces it. Chunk parity is rs<->py (rs-chunks README
+// "Parity", re-verified 2026-08-08); the image and PDF rows are js<->py, where
+// the single difference in each is the same known one: rendering a page needs
+// a rasteriser and there is no PDFium in wasm.
 const parityFacts = [
-  "2204 / 2214 chunk comparisons byte-identical (99.5%)",
-  "1056 / 1056 image extractions identical",
-  "273 / 273 markdown conversions identical",
+  "3,222 / 3,222 chunk comparisons byte-identical (100%)",
+  "374 / 375 image-extraction fixtures identical",
+  "23 / 24 PDF fixtures identical (chunks + markdown + images)",
 ];
 
 export function LanguagesSection() {
@@ -57,9 +60,9 @@ export function LanguagesSection() {
             <h3 className="text-lg font-semibold">Byte-identical, verified</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               All three SDKs wrap the same Rust engine, so they emit exactly the
-              same chunks. Parity is checked over every fixture × every mode — the
-              only differences trace to the reference engine&apos;s own
-              non-determinism.
+              same chunks. Parity is checked over every fixture × every mode, by
+              harnesses you can run yourself — and the one remaining difference
+              is a scanned PDF that WASM cannot rasterise.
             </p>
             <div className="mt-4">
               <InstallTabs />

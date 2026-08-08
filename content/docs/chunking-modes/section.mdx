@@ -1,33 +1,87 @@
 ---
 title: section
-description: Group all content under a heading into a single chunk.
+description: Group the content under a heading into one chunk — and know where the heading itself ends up.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-`section` keeps everything under a heading together in one chunk — the heading
-plus its paragraphs, lists, and tables. It's the go-to mode for building a
-document search index where each result should be a self-contained section.
+`section` groups the body under a heading into a single chunk, so a search hit
+returns a self-contained passage instead of one stray paragraph.
 
-```python
-from py_chunks import get_chunks
+<LangSelect />
 
-chunks = get_chunks("handbook.docx", mode="section")
-```
+<Callout type="warn" title="The heading is usually its OWN chunk">
+  In every markdown-pipeline format — Markdown, HTML, TXT, PDF, EPUB, RTF,
+  EML/MBOX, MSG, ODT, ODP, JSON, IPYNB — the heading is emitted as a **separate
+  chunk** with `content_type: "heading"`, and the `section` chunk that follows
+  holds only the body. It is not folded in.
 
-## content_type
+  If you build "return the whole section" by taking chunks where
+  `content_type == "section"`, you drop every heading, and your index fills up
+  with orphaned heading chunks that have no body. Reassemble instead: a
+  `heading` chunk and the `section` chunk that follows it share the same
+  `heading_path`.
 
-Section chunks carry the `content_type` `section`. Metadata typically includes
-the section heading and heading path so you can show breadcrumbs in results.
-
-<Callout type="info">
-  Section chunks are capped at roughly 2,000 characters; longer sections are
-  split so no single chunk becomes unwieldy for embedding.
+  DOCX, DOC, PPTX and PPT are the exception — their own chunkers put the heading
+  line at the top of the section chunk's content.
 </Callout>
+
+## Real input → real output
+
+Run against a small `notes.md` with three headings, at default parameters:
+
+<LangCode id="modeSection" />
+
+Six chunks from three sections: heading, body, heading, body, heading, body.
+The `heading_path` is what pairs them back up.
+
+## What it emits
+
+| Format | `content_type` values emitted |
+| --- | --- |
+| Markdown-family — Markdown, HTML, TXT, PDF, EPUB, RTF, EML/MBOX, MSG, ODT, ODP, JSON, IPYNB | `heading` **and** `section` |
+| DOCX, DOC, PPTX family, PPT | `section` only — heading text is the first line of the chunk |
+| Spreadsheets, CSV/TSV | not supported (`mode must be one of [page_aware, row, semantic, sheet, sliding_window, table] for XLSX`) |
+
+A document with no headings produces no `heading` chunks, obviously — and
+JSON/JSONL render no headings of their own, so they usually have none.
+
+Measured: `prose_heavy.md` → 10 `section` + 10 `heading`;
+`arxiv_1301.3781_word2vec.pdf` → 31 `section` + 10 `heading`;
+`all_round.docx` → 9 `section`, 0 `heading`.
+
+## Units and formats
+
+| Family | Unit grouped into a section |
+| --- | --- |
+| Markdown-family (md, html, txt, pdf, epub, rtf, eml/mbox, msg, odt, odp, json, ipynb) | markdown block — paragraphs, lists, tables and code blocks under one heading |
+| DOCX, DOC | paragraph, from one heading to the next |
+| PPTX | slides grouped by PPTX sections, or a title-divider heuristic |
+| PPT | slide |
+
+## Parameters
+
+`section` reads none of the four mode parameters. Boundaries come entirely from
+the document's heading structure.
+
+<Callout type="info" title="2,000-character cap">
+  A section body longer than 2,000 characters is split at a paragraph boundary
+  into several `section` chunks. The pieces carry `split_part` and `split_total`
+  so you can rejoin them; a section that fits in one chunk leaves both `null`.
+  This applies to the markdown-family formats — DOCX and PPTX have their own
+  section builders.
+</Callout>
+
+## Metadata
+
+`section` chunks carry `section_heading`, `heading_path`, `section_level`,
+`block_types`, `char_count`, `paragraph_count` and `chunk_index` — the exact set
+varies by format. Full listing in the
+[Metadata Reference](/docs/metadata-reference).
 
 ## When to use it
 
-- Document search indexes where a hit should return a whole section.
-- RAG where you want enough surrounding context to answer, but scoped to one
-  topic.
-- Navigation / outline features keyed on headings.
+- Document search indexes where a hit should return a whole passage.
+- RAG where you want enough surrounding context to answer, scoped to one topic.
+- Navigation / outline features keyed on headings — the standalone `heading`
+  chunks are exactly the outline.

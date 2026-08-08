@@ -42,7 +42,6 @@ Every link below points at the raw Markdown of a page. The human-readable HTML l
 ## Guides
 
 - [Recipes](https://www.chunkengine.dev/md/recipes): RAG ingestion, batch processing, streaming into a vector store.
-- [Format Examples](https://www.chunkengine.dev/md/format-examples): real output for JSON, email, RTF, EPUB, notebooks, OpenDocument.
 - [Framework Integration](https://www.chunkengine.dev/md/framework-integration): FastAPI, Flask, Django, Celery, Express, Hono, Next.js, Axum and more.
 
 ## Optional

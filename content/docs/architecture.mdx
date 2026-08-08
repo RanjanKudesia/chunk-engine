@@ -1,73 +1,480 @@
 ---
 title: Architecture
-description: A thin language binding dispatches by file type into one compiled Rust engine.
+description: One Rust engine, vendored into two bindings, with dispatch and chunking in the engine and almost nothing in the bindings — and how that is enforced.
 ---
 
-chunk-engine is one Rust engine (`rs-chunks`) with thin language bindings. Each
-binding handles ergonomics — input detection, dispatch, and result shaping —
-while all parsing and chunking happens in Rust.
+import { Callout } from "fumadocs-ui/components/callout";
 
-- **Python (`py-chunks`)** binds the engine natively via PyO3.
-- **JavaScript (`js-chunks`)** loads the engine compiled to WASM (Node, Bun,
-  Deno, browsers).
-- **Rust (`rs-chunks`)** is the engine itself — the reference implementation.
+chunk-engine is one Rust library, `rs-chunks`, plus two bindings that add as
+little as possible on top of it. "Byte-identical across languages" is not a
+testing outcome here; it is a consequence of there being exactly one
+implementation of every decision that affects output, and of a build that fails
+when a copy of that implementation drifts.
 
-Because every binding calls the same core, the output is byte-identical (see
-[Languages & parity](/docs/languages)).
+This page describes how the pieces actually fit together, and where the honest
+seams are.
 
-<div className="my-8 flex flex-col items-stretch gap-3 font-mono text-sm">
-  <div className="rounded-lg border border-border bg-fd-card p-4">
-    <div className="text-brand">Language binding — Python · JavaScript · Rust</div>
-    <div className="mt-1 text-fd-muted-foreground">
-      get_chunks / getChunks · stream · get_markdown · from path / bytes /
-      fileobj / upload / URL
-    </div>
-  </div>
-  <div className="text-center text-fd-muted-foreground">↓ detect source · resolve extension</div>
-  <div className="rounded-lg border border-border bg-fd-card p-4">
-    <div className="text-brand">Dispatcher</div>
-    <div className="mt-1 text-fd-muted-foreground">
-      extension → format chunker (docx, pdf, pptx, xlsx, csv, html, md, …)
-    </div>
-  </div>
-  <div className="text-center text-fd-muted-foreground">↓ call the compiled Rust core (PyO3 · WASM · native)</div>
-  <div className="rounded-lg border border-brand/40 bg-brand/5 p-4">
-    <div className="text-brand">Rust engine</div>
-    <div className="mt-1 text-fd-muted-foreground">
-      parse → classify blocks (ContentType) → apply mode → build chunks + metadata
-    </div>
-  </div>
-  <div className="text-center text-fd-muted-foreground">↑ typed chunks — list[dict] · Chunk[] · Vec&lt;Chunk&gt;</div>
-</div>
+## 1. Three trees, one engine
 
-## How a call flows
+| Tree | What it holds | Ships as |
+| --- | --- | --- |
+| `rs-chunks/` | The engine. All parsing, all chunking, all metadata. | crates.io `rs-chunks` (library name `chunks_rs`) |
+| `py_chunks/` | A PyO3 binding + a small Python layer, over a **vendored copy** of the engine. | PyPI `py-chunks` |
+| `js-chunks/` | A wasm-bindgen wrapper crate + a TypeScript layer, over a **vendored copy** of the engine. | npm `js-chunks` |
 
-1. **Input detection.** The unified functions inspect `source` — path, bytes,
-   file-like, framework upload, or `http(s)` URL — and normalize it. In Python,
-   non-path inputs are written to a temporary file with the correct extension
-   and cleaned up afterward; the Rust and WASM builds parse bytes in memory via
-   `from_bytes` entry points.
-2. **Dispatch.** The file extension selects a format chunker. The extension is
-   the single source of truth, which is why bytes inputs require a `filename`.
-3. **Rust engine.** The compiled core parses the document, classifies each block
-   into a `ContentType`, applies the requested `mode`, and returns typed chunks
-   with metadata.
-4. **Result shaping.** The binding maps the Rust result into the language's
-   native shape — a Python `list[dict]`, a JS `Chunk[]`, or a Rust
-   `Vec<Chunk>` — plus the image variants when requested.
+The two bindings each carry a *copy* of the engine crate rather than a path
+dependency, because each publishes to its own registry from its own repository
+and must build from a standalone clone. A copy that nothing checks is a copy
+that drifts, and drift in this project means the parity claim quietly becomes
+false — so the copies are managed by a script, not by hand.
 
-## Design principles
+`sync_engine.sh` overwrites both vendored copies from `rs-chunks/src` with
+`--write`, and with no arguments it *diffs* them and exits non-zero if either
+has moved. It copies the manifest's referenced files too (`README.md`,
+`LICENSE`), because a manifest pointing at a missing file makes `maturin sdist`
+refuse to build — which is how a release once broke. It also checks that the
+website's vendored playground WASM matches the current `pkg-web` build, so the
+playground cannot silently demonstrate an old engine.
 
-- **Rust does the work.** Parsing and chunking are compiled, not interpreted, and
-  don't pull in a heavy dependency tree in any language.
-- **One dispatch table.** Every format flows through the same entry points, so
-  the API surface stays small as formats are added.
-- **Streaming built in.** The engine can yield chunks incrementally, exposed as
-  `stream_chunks` (Python), `streamChunks` (JavaScript), and per-format
-  `stream(...)` (Rust). Memory is bounded for the truly incremental formats
-  (PDF, CSV, and the Markdown/HTML/TXT state machines); container formats parse
-  once, then emit lazily — see [Streaming](/docs/streaming) for the per-format
-  profile.
-- **Byte-identical across bindings.** Because every binding calls the same core,
-  the output matches exactly — verified by the parity suite (see
-  [Languages & parity](/docs/languages)).
+<Callout type="warn" title="A stray .rs file is a build failure">
+  `py_chunks/src/extensions/<format>/` is binding glue only: `mod.rs` and
+  `chunkers.rs`, nothing else. `sync_engine.sh` fails if any other `.rs` file
+  appears there, unconditionally. Such a file would shadow the vendored engine
+  and never be overwritten by `--write` — which is precisely how three
+  divergence defects were produced before the fork was removed in August 2026.
+  All 17 format modules now take their engine from the vendored crate.
+</Callout>
+
+<Mermaid chart={`
+flowchart TD
+  RS["rs-chunks/src<br/>the engine · single source of truth"]
+  SYNC["sync_engine.sh --write<br/>no args = drift check, exit 1"]
+  PYV["py_chunks/crates/rs-chunks<br/>vendored copy"]
+  JSV["js-chunks/crates/rs-chunks<br/>vendored copy"]
+  PYB["py_chunks/src<br/>PyO3 glue · extensions are mod.rs + chunkers.rs only"]
+  JSB["js-chunks/crates/chunks-wasm<br/>wasm-bindgen wrapper"]
+  CRATE["crates.io · rs-chunks"]
+  WHEEL["PyPI · py-chunks"]
+  NPM["npm · js-chunks"]
+  WASM["chunk-engine/lib/js-chunks-web<br/>pinned playground WASM"]
+  RS --> SYNC
+  RS --> CRATE
+  SYNC --> PYV
+  SYNC --> JSV
+  SYNC -. "checks freshness" .-> WASM
+  PYV --> PYB --> WHEEL
+  JSV --> JSB --> NPM
+`} title="Diagram 1 — the engine is written once and copied by script; the script is the drift alarm." />
+
+## 2. The life of one call
+
+The layering is the part most often described backwards. **Routing by file
+extension happens inside the engine**, in `rs-chunks/src/dispatch.rs` — not in
+the bindings. What the bindings do is turn whatever the caller passed into
+something the engine can take, and turn the result back into a native shape.
+
+1. **Normalize the source.** JavaScript resolves a path (Node only), a
+   `Uint8Array`, an `ArrayBuffer` or a `Blob` down to `{ data, filename }` and
+   stops there — it performs no routing at all. Python is split: a *path* goes
+   through a Python-level routing table, and *bytes* go straight into the
+   engine's dispatch. Rust callers are already holding a path or a slice.
+2. **Enter dispatch behind a panic boundary.** All six public dispatch
+   functions wrap the parse in `catch_unwind`. A panic anywhere in the engine,
+   or in a third-party parser reached from it, becomes
+   `ChunkError::Parse("internal parser panic: …")` instead of unwinding into
+   the caller's runtime — which for a Python or WASM host is not something the
+   host can be expected to survive.
+3. **Route on the extension.** `dispatch.rs` lowercases the extension and
+   matches it to a format module, applying the delimited/spreadsheet argument
+   remapping on the way (see the sentinel note in the
+   [API reference](/docs/api-reference#shared-parameters)). An unknown
+   extension is `ChunkError::Unsupported`. This is why byte input requires a
+   `filename`: the extension is the only routing signal, and nothing sniffs
+   content.
+4. **Parse and chunk in the format module.** The format produces
+   `Vec<Chunk>` — `{ content: String, content_type: String, metadata: Value }`.
+5. **Shape the result.** PyO3 converts to `list[dict]`; the WASM wrapper
+   serialises to plain JS objects and renames the single field `content_type` →
+   `contentType`; Rust hands back the `Vec<Chunk>` unchanged.
+
+<Callout type="info" title="Correcting an older version of this page">
+  This page used to say that Python writes non-path inputs to a temporary file
+  with the right extension. **That has not been true since 0.6.1.** Bytes, file
+  objects, framework uploads and URL downloads all go straight into the
+  engine's no-filesystem API (`get_chunks_from_bytes` and friends) with no disk
+  round-trip.
+
+  One path still materialises a temp file: **streaming from bytes**
+  (`stream_chunks_from_bytes`, and the file-object / upload / URL streaming
+  helpers that funnel into it). The engine's streaming surface is per-format
+  and path-based — there is no `dispatch::stream` and no
+  `stream_*_from_bytes` on the bytes binding, except for `pdf` and `xlsx` at
+  the format level — so the Python layer writes a temp file, opens the
+  iterator, and deletes the file when the iterator is exhausted, closed, or
+  garbage-collected.
+</Callout>
+
+<Mermaid chart={`
+flowchart TD
+  PY["Python: get_chunks(source)"]
+  JS["JavaScript: getChunks(source, opts)"]
+  RUST["Rust: chunks_rs::get_chunks(path, ...)"]
+  PYPATH{"is the source a path?"}
+  PYTABLE["Python routing table<br/>ext to chunk_docx / chunk_csv / ..."]
+  NORM["normalizeSource<br/>path · Uint8Array · ArrayBuffer · Blob<br/>to data + filename"]
+  GUARD["catch_unwind boundary<br/>panic becomes ChunkError::Parse"]
+  DISPATCH["dispatch.rs<br/>extension selects the format module"]
+  FMT["format module<br/>parse · classify · apply mode"]
+  CHUNKS["Vec of Chunk<br/>content · content_type · metadata"]
+  SHAPE["binding shapes the result<br/>list of dict · Chunk array · Vec"]
+  PY --> PYPATH
+  PYPATH -->|yes| PYTABLE
+  PYTABLE --> GUARD
+  PYPATH -->|bytes, fileobj, upload, URL| GUARD
+  JS --> NORM --> GUARD
+  RUST --> GUARD
+  GUARD --> DISPATCH --> FMT --> CHUNKS --> SHAPE
+`} title="Diagram 2 — dispatch lives in the engine; the bindings normalize going in and shape coming out." />
+
+## 3. The format facade and the shared Markdown pipeline
+
+Every format module exposes the same facade — `chunk`, `chunk_from_bytes`,
+`chunk_with_options`, `stream`, `to_markdown`, `to_markdown_from_bytes`, and on
+the twelve formats with embedded binary parts, the `*_with_images` variants.
+That uniformity is what lets `dispatch.rs` be a flat match statement instead of
+seventeen special cases.
+
+Behind the facade the formats are not all the same depth of work, and the
+single most explanatory fact about this codebase is how little of it is
+per-format:
+
+**Seven formats implement only a `load` step.** `json`, `eml`, `odf`, `msg`,
+`ipynb`, `rtf` and `pdf` each parse their own container into one struct:
+
+```rust
+pub(crate) struct Loaded {
+    pub markdown: String,
+    pub images: Vec<(String, Vec<u8>)>,
+    pub metadata: serde_json::Value,   // becomes document_metadata on every chunk
+    pub records: Option<Vec<usize>>,   // record start blocks, for .json/.jsonl/.ndjson
+}
+```
+
+…and then hand it to `formats/pipeline.rs`, which runs the **Markdown
+chunker** over `loaded.markdown` and stamps the results. Every mode, every
+boundary decision, every `content_type` for those seven formats is the `.md`
+implementation. A `.msg` email and a `.ipynb` notebook chunk identically to the
+Markdown you would get from `get_markdown` on them, because that is literally
+the code path.
+
+The stamping step is where the two format-specific extras get attached:
+`document_metadata` (the whole `Loaded.metadata` object) on every chunk, and —
+only for a format that has records — a `record_range` naming the records a
+chunk was built from. Formats without records gain nothing, which is why adding
+record tracking changed no output for `.md`, `.html`, `.txt` or `.pdf`.
+
+Two more reuse relationships exist alongside it: `epub` chunks through the
+**HTML** builders, and legacy `.ppt` runs on the `.doc` extraction stack. That
+leaves eight formats — `md`, `html`, `txt`, `docx`, `pptx`, `doc`, `csv`,
+`xlsx` — with block models of their own.
+
+<Mermaid chart={`
+flowchart LR
+  subgraph P["7 formats — implement load only"]
+    J["json"]
+    E["eml / mbox"]
+    O["odt / odp"]
+    M["msg"]
+    I["ipynb"]
+    R["rtf"]
+    D["pdf"]
+  end
+  L["pipeline::Loaded<br/>markdown · images · metadata · records"]
+  MD["md chunker<br/>build_records_from_bytes"]
+  ST["pipeline::stamp<br/>+ document_metadata, + record_range"]
+  C["Vec of Chunk"]
+  J --> L
+  E --> L
+  O --> L
+  M --> L
+  I --> L
+  R --> L
+  D --> L
+  L --> MD --> ST --> C
+  subgraph N["8 formats: own block model"]
+    NB["md · html · txt · docx · pptx · doc · csv · xlsx"]
+  end
+  NB --> C
+  EP["epub — reuses the html builders"] --> C
+  PP["ppt — reuses the doc stack"] --> C
+`} title="Diagram 3 — seven prose-like formats are a loader plus the Markdown chunker." />
+
+## 4. How each binding is built
+
+### Python — PyO3
+
+- **One wheel per platform covers CPython 3.9+.** The binding builds against
+  pyo3's `abi3-py39` stable ABI, matching `requires-python = ">=3.9"`. Before
+  0.6.1 only 3.13 got a wheel and everyone else fell back to a source build.
+- **The GIL is released around every engine call.** There are 23
+  `allow_threads` sites — inside the binding macros, inside the shared `run()`
+  helper the hand-written CSV and XLSX functions use, and around each
+  individual `next()` pull in the streaming iterators. A long parse does not
+  block other Python threads, and a stream releases the GIL per chunk rather
+  than for the whole iteration.
+- **The pyfunction surface is macro-generated.** `bind_format!` expands one
+  invocation into eight `#[pyfunction]`s — six per-mode chunkers,
+  `<fmt>_to_markdown`, and a streaming constructor — plus a `register()` that
+  adds them to the module; `bind_images!` adds the two image
+  functions; `bind_per_mode_format!` covers `.doc` / `.ppt` / `.docx`, which
+  historically shipped one function per mode. Only `csv` and `xlsx` are
+  hand-written, because their argument lists do not fit the macro's shape. A
+  format's binding file is therefore usually a few lines, and the per-format
+  surfaces cannot drift apart by accident.
+- The package ships `py.typed` and a stub for the compiled module, so type
+  checkers see the whole surface.
+
+### JavaScript — wasm-bindgen
+
+- `crates/chunks-wasm` is a thin wrapper crate over the vendored engine,
+  compiled to WebAssembly. `src/index.ts` is the ergonomic layer on top:
+  source normalization, options defaults, overloads, and error wrapping.
+- **Two builds, two init models.** On Node the package requires the
+  `pkg-node` CommonJS build, which instantiates the module synchronously at
+  require time. Everywhere else it dynamically imports the `pkg-web` build and
+  awaits its initialiser. Either way the module is loaded lazily on the first
+  call and cached. Bundled browser apps import
+  [`js-chunks/web`](/docs/api-reference/javascript#entry-points) instead — the
+  raw positional wasm-bindgen surface — and await the init themselves with an
+  explicit `.wasm` URL, because a dynamic import of a relative file beside a
+  `.wasm` does not survive bundling.
+- **Two serializer flags are load-bearing for parity.** The wrapper serialises
+  with `serialize_maps_as_objects(true)` so `metadata` arrives as a plain JS
+  object rather than an ES `Map`, and `serialize_missing_as_null(true)` so a
+  metadata key whose value is absent arrives as `null` rather than
+  `undefined`. Without the second flag `JSON.stringify` would silently drop
+  keys like `section_heading` that py-chunks and rs-chunks emit as `null`, and
+  the JSON of a JavaScript chunk would stop matching the JSON of a Python one
+  for reasons that have nothing to do with chunking.
+- **One deliberate capability divergence: no PDFium in WASM.** PDF *parsing* is
+  pure Rust and compiles to `wasm32`, so JavaScript runs the same PDF parser as
+  the other two SDKs. PDF page *rasterisation* is behind the `pdf-native`
+  Cargo feature (PDFium via the `liteparse` crate), and the wasm crate depends
+  on the engine with `default-features = false`. A scanned PDF with no
+  extractable text and no embedded page image therefore reports that it has no
+  text in JavaScript, where the native SDKs return page renders.
+
+## 5. The error model
+
+The engine has one error type with four variants, and it is
+`#[non_exhaustive]` as of 0.6.1 — downstream `match`es need a wildcard arm, so
+variants can be added without a semver-major bump.
+
+```rust
+#[non_exhaustive]
+pub enum ChunkError {
+    Unsupported(String),   // this extension / capability is not handled
+    InvalidArg(String),    // bad mode, bad window/overlap, bad delimiter
+    Parse(String),         // the document could not be parsed or decoded
+    Io(std::io::Error),    // underlying I/O failure
+}
+```
+
+Two things about how it reaches the other two languages are worth knowing.
+
+**The message text is the bare inner string, not `Display`.** `ChunkError`'s
+`Display` prefixes the variant (`"parse error: …"`). Both bindings deliberately
+bypass it: PyO3 raises the inner `String`, and the WASM layer builds a
+`js_sys::Error` from the inner `String` and attaches the variant tag
+out-of-band as a `kind` property, which the TypeScript layer reads back into
+`ChunkError.kind`. That is what makes a JavaScript `e.message` byte-identical
+to the message py-chunks raises for the same input, and it is a fix for a real
+divergence: the WASM binding used to use `Display`, so every JavaScript message
+carried a prefix Python's did not.
+
+**Which variant a failure carries is decided where the engine constructs it.**
+`impl From<String> for ChunkError` lifts an internal `Result<_, String>` into
+`ChunkError::Parse`, and much of the per-format logic returns exactly that.
+This used to leak: `md`, `txt` and `html` lifted their whole builder result
+with `map_err(ChunkError::Parse)`, and `csv::chunk_from_bytes` omitted its
+range checks altogether, so `overlap >= window_size` came back as `Parse` for
+the markdown-family formats but `InvalidArg` for DOCX/PPTX/XLSX. It has been
+fixed: a shared `options::validate_mode_args` now runs **before** dispatch in
+all three builders, and the missing CSV checks were added, so every
+caller-argument mistake is `InvalidArg` for every format and on both the path
+and the bytes route.
+
+The last gap has since closed as well. **EPUB** does not route through the
+markdown pipeline the way its sibling formats do, so it never reached
+`validate_mode_args` at all and bad window arguments produced an empty chunk
+list instead of an error — silently, because `epub::extract::chunk_package`
+absorbs a per-spine-document failure as "this chapter produced no chunks". It
+now calls its own `epub::validate_args` at all four entry points, *after* the
+extension check and *before* the book is loaded, so the bytes route rejects
+without parsing too. The *kind* of mistake now maps predictably onto the
+variant for every format — and in Rust, keep the wildcard arm, because
+`ChunkError` is `#[non_exhaustive]`.
+
+<Mermaid chart={`
+flowchart LR
+  E["ChunkError · non_exhaustive<br/>Unsupported · InvalidArg · Parse · Io"]
+  RSV["Rust<br/>Err of ChunkError — variant intact"]
+  PYV["Python<br/>ValueError · ValueError · RuntimeError · OSError<br/>message is the bare inner string"]
+  JSV["JavaScript<br/>ChunkError extends Error<br/>message is the bare inner string<br/>kind: unsupported · invalid-arg · parse · io"]
+  E --> RSV
+  E --> PYV
+  E --> JSV
+`} title="Diagram 4 — one error type, three surfaces; the message is shared, the variant is carried differently." />
+
+The JavaScript wrapper's own pre-engine boundary is fully inside this model:
+
+- **Argument validation the wrapper performs itself** — a path used off Node, a
+  byte source with no filename, an unsupported `source` type — is thrown as
+  `ChunkError` with `kind: "invalid-arg"`.
+- **The `opts` object is snapshotted once** before anything else, by a shared
+  `snapshotOpts` used by all five public entry points. A `null` or non-object
+  `opts`, and a property getter that throws, both become `invalid-arg` rather
+  than a raw `TypeError` or the getter's own exception — and because the
+  snapshot is taken up front, a getter can run at most once and never
+  mid-parse.
+- **Types and ranges are checked host-side** because the wasm boundary takes
+  `usize` and would otherwise coerce: a negative, fractional, `NaN` or
+  non-numeric count and a non-string `filename` / `mode` are all `invalid-arg`.
+  Zero is deliberately left to the engine, whose message names the parameter
+  the target format actually uses.
+- **Reading a path on Node** goes through `fs.readFileSync` before the engine is
+  reached, and that call is wrapped too: a missing or unreadable file becomes a
+  `ChunkError` with `kind: "io"`, preserving Node's own message. A `Blob` whose
+  `arrayBuffer()` rejects reports the same `kind: "io"` — it is the same
+  condition, the source's bytes could not be read. There is no
+  input for which the JavaScript API throws a non-`ChunkError`. See
+  [Error Handling](/docs/error-handling).
+
+Python's own layer raises before the engine too — `FileNotFoundError`,
+`ValueError`, `TypeError`, `NotImplementedError` — for the same reason. The
+full per-language contract is in the
+[API reference](/docs/api-reference).
+
+## 6. Streaming, honestly
+
+Streaming in this project is **per-format and path-based**. There is no
+dispatch-level stream function; `formats::<fmt>::stream(path, …)` is the whole
+surface, and `pdf` and `xlsx` add a bytes variant. Every format has a `stream`
+entry point, but that says nothing about whether it saves memory — most of them
+chunk the document in full and then hand the vector out one element at a time.
+
+What is genuinely incremental, per runtime:
+
+| Runtime | Genuinely incremental | Everything else |
+| --- | --- | --- |
+| **Rust** | `pdf` in `default` mode (page-at-a-time, with a 64-deep bounded channel on native builds, so the producer paces itself); `xlsx` in `row`/`default` and `sliding_window`; `csv` in the four modes its streaming iterator accepts (`row`/`default`, `sliding_window`, `page_aware`) | Every other format and mode: full parse, then lazy drain |
+| **Python** | The same `pdf` and `xlsx` cases — the binding pulls one item at a time from the engine iterator, releasing the GIL per pull | Everything else — **including CSV**, which the binding drains through the batch `csv::chunk` rather than the engine's lazy CSV iterator |
+| **JavaScript** | Nothing | `streamChunks` awaits `getChunks` in full and then yields — the entire document and the entire chunk array are in memory before the first `yield`. Identical results and identical peak memory to `getChunks`. |
+
+The PDF `default` case is the one with a measured claim behind it: the first
+chunk of a 5,000-page document costs fewer than ten rendered pages. The other
+PDF modes rank headings across the whole document before emitting anything, so
+the pull-per-item shape is preserved but the cost is paid up front.
+
+<Callout type="warn" title="Retracting a claim this page used to make">
+  An earlier version of this page said memory is bounded for the truly
+  incremental formats "across all three runtimes". That is not true of
+  JavaScript at all, and it is not true of CSV in Python. Streaming is worth
+  reaching for because it lets you start downstream work before chunking
+  finishes — not because it bounds memory everywhere. See
+  [Streaming](/docs/streaming) for the per-format table.
+</Callout>
+
+## 7. How "byte-identical" is enforced
+
+Six harnesses, each closing a gap the others cannot see. The numbers below are
+the current recorded baselines; a drop from any of them blocks a change.
+
+| Harness | Compares | Baseline |
+| --- | --- | --- |
+| `parity_dump.rs` → `parity_check.py` | rs ↔ py, chunks **and** Markdown, every fixture × every applicable mode | **3,222 identical / 0 different** |
+| `golden_snapshot.py check` | the whole corpus against a pinned snapshot of `{content, content_type, metadata keys}` | **3,198 cases, 0 changed** |
+| `py_chunks` pytest | the Python suite | **4,876 passed** |
+| `verify_output.py` | actual extracted **text** against known ground truth, per format family | **201 / 201** |
+| `image_parity.py` → `image_parity_check.mjs` | js ↔ py, image names and image **bytes**, every image-bearing format | **374 / 375** |
+| `pdf_parity.py` → `pdf_parity_check.mjs` | js ↔ py, PDF Markdown + 3 modes + image bytes | **23 / 24** |
+
+Alongside them: `images_dump.rs` → `images_check.py` and `md_images_dump.rs` →
+`md_images_check.py` extend the rs ↔ py comparison to the `_with_images`
+surfaces, and `js-chunks/test/parity_dump.mjs` emits the same JSON-lines format
+as the Rust dump from the WASM engine so JavaScript output can be fed through
+the same checker.
+
+Three details make these numbers mean something:
+
+- **3,222 is a composition, not a round number.** `parity_dump.rs` emits one
+  Markdown record plus one record per applicable mode for every fixture it can
+  handle: 353 prose files × 7, 18 delimited files × 4, and 97 spreadsheet
+  files × 7 — 2,471 + 72 + 679 = 3,222. Files over 10 MB and unrecognised
+  extensions are skipped.
+- **The golden snapshot is not a parity check.** rs and py share source, so a
+  bug in shared code produces identically wrong output on both sides and reads
+  as a pass. The snapshot is a *change* detector against a pinned baseline —
+  which is how a 24-module refactor could be proven behaviour-identical.
+- **`verify_output.py` is not a shape check.** Assertions like "non-empty" and
+  "`content_type` is a string" cannot see a chunk that lost every `&`. This
+  harness asserts on real extracted text.
+
+<Callout type="info" title="The two known differences, and why they are the same one">
+  Both shortfalls above are the **same** fixture and the **same** cause:
+  `pdfjs_issue13520.pdf`, the only corpus PDF with neither extractable text nor
+  an embedded page image. Rust and Python fall back to rasterising the page
+  with PDFium; JavaScript has no PDFium (see §4) and returns a specific "no
+  extractable text" error instead. Nothing else differs.
+
+  The exception is not a fudge factor: both checkers hold it as a named
+  one-element allowlist and **fail if the set of differences stops matching it
+  exactly**, so it cannot quietly widen.
+</Callout>
+
+<Mermaid chart={`
+flowchart TD
+  RS["rs-chunks (native)"]
+  PY["py-chunks (native)"]
+  JS["js-chunks (wasm)"]
+  SNAP["golden_snapshot.py<br/>pinned baseline · 3198 cases · 0 changed"]
+  TRUTH["verify_output.py<br/>ground-truth text · 201/201"]
+  P1["parity_dump to parity_check<br/>chunks + markdown · 3222/0"]
+  P2["images_dump · md_images_dump<br/>to their _check.py"]
+  P3["image_parity · pdf_parity<br/>to their .mjs checkers<br/>374/375 · 23/24"]
+  RS --- P1 --- PY
+  RS --- P2 --- PY
+  PY --- P3 --- JS
+  PY --> SNAP
+  PY --> TRUTH
+`} title="Diagram 5 — rs↔py proves the bindings agree; the snapshot and ground-truth harnesses prove they are not agreeing on something wrong." />
+
+## 8. Design principles
+
+- **One implementation of every output decision.** Parsing, chunking, metadata
+  and routing all live in `rs-chunks`. The bindings normalize input and shape
+  output; they decide nothing (§2).
+- **A copy that nothing checks is a copy that drifts.** Vendoring is the only
+  way to publish three independent packages from one engine, so the drift check
+  is a script that fails the build rather than a rule people remember (§1).
+- **Uniform facades, shared internals.** One facade per format keeps dispatch
+  flat; seven formats behind it are a loader plus the Markdown chunker, and two
+  more reuse a sibling's builders (§3).
+- **Adversarial input fails cleanly.** Every dispatch entry point is
+  panic-guarded, so a hostile file returns an `Err` instead of taking the host
+  runtime down with it (§2).
+- **Errors carry the same words everywhere.** The bindings bypass `Display` so
+  the message text is byte-identical, and carry the variant in whatever form
+  the host language already has for it (§5).
+- **Say what streaming actually does.** Per-format, path-based, incremental in
+  a handful of specific cases — and an ergonomic wrapper in JavaScript (§6).
+- **Publish only what a harness proves.** Every parity number on this site has
+  a script that regenerates it, and the two known differences are named,
+  explained, and pinned so they cannot widen (§7).
+
+## Related
+
+- [Languages & parity](/docs/languages) — choosing an SDK, and reproducing the parity claim.
+- [API Reference](/docs/api-reference) — the exact surface of each SDK.
+- [Streaming](/docs/streaming) — the per-format streaming profile.
+- [Error Handling](/docs/error-handling) — what raises, and how to catch it.

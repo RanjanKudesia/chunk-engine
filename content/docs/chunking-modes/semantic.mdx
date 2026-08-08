@@ -1,25 +1,147 @@
 ---
 title: semantic
-description: Group semantically coherent passages for embeddings and LLMs.
+description: Merge adjacent blocks while an eleven-signal ladder says they're the same idea — and read back exactly which signal fired.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-`semantic` groups coherent passages so boundaries follow meaning rather than
-markup. It's the recommended mode when the chunks feed an embedding model or an
-LLM, because each chunk is a self-contained idea.
+`semantic` walks the document one block at a time and asks a single question at
+each step: *does this block continue the one before it?* If yes it is merged
+into the current chunk; if no, the chunk is closed and a new one starts.
 
-```python
-from py_chunks import get_chunks
+There is no embedding model and no similarity score. The decision is a fixed
+ladder of lexical signals, evaluated in strict priority order, and **the signal
+that fired is written into the chunk's metadata** — so a boundary you disagree
+with is always explainable.
 
-chunks = get_chunks("research.pdf", mode="semantic")
-```
+<LangSelect />
 
-## content_type
+## Real input → real output
 
-Semantic chunks carry the `content_type` `semantic`. The grouping is driven by
-multiple signals (heading structure, paragraph proximity, length, and content
-similarity), so a chunk may span several source paragraphs that belong together.
+<LangCode id="modeSemantic" />
+
+## The signal ladder
+
+For each candidate block, in this order. The first rule that matches decides.
+
+| # | Signal | Fires when the block starts with… | Result |
+| --- | --- | --- | --- |
+| 0 | *hard size limit* | — (checked first, on length) | **new chunk** |
+| 1 | `transition_break` | `however`, `nevertheless`, `in contrast`, `on the other hand`, `meanwhile`, `conversely`, `that said`, `in summary`, `to summarize`, `to conclude`, `in conclusion`, `to wrap up`, … | **new chunk** |
+| 2 | `reference_continuity` | `this `, `it `, `they `, `these `, `that `, `those `, `its `, `their `, `such `, `the above`, `the following`, `the latter`, … | merge |
+| 3 | `elaboration` | `additionally`, `furthermore`, `moreover`, `in addition`, `what is more`, `on top of that`, `notably`, `importantly`, `it is worth`, `it should be noted`, `equally`, `similarly`, … | merge |
+| 4 | `example` | `for example`, `for instance`, `such as`, `e.g.`, `i.e.`, `as an example`, `to illustrate`, `consider `, `as shown`, `as seen`, `as demonstrated`, `take `, … | merge |
+| 5 | `cause_effect` | `because`, `therefore`, `thus`, `hence`, `as a result`, `consequently`, `this means`, `this leads`, `this causes`, `this results`, `this implies`, `this suggests`, … | merge |
+| 6 | `contrast_continuation` | `although`, `even though`, `despite`, `whereas`, `even if`, `regardless`, `notwithstanding`, `while it`, `while this` | merge |
+| 7 | `question_answer` | *(previous block ended with `?`)* | merge |
+| 8 | `definition_expansion` | *(previous block was ≤ 80 chars and ended with `:`, and this one is &gt; 60 chars)* | merge |
+| 9 | `short_paragraph` | *(this block is ≤ 80 chars)* | merge |
+| 10 | `list_continuation` | *(block is a list sharing a significant keyword with the chunk so far)* | merge |
+| 11 | `keyword_overlap` | *(block shares at least one significant keyword with the chunk so far)* | merge |
+| — | *no signal matched* | — | **new chunk** |
+
+Prefix matching is ASCII case-insensitive.
+
+<Callout type="warn" title="The 1,500-character cap overrides every signal">
+  Before any signal is evaluated, the chunker checks
+  `chunk_chars + block_chars + 2 > 1500`. If that is true the chunk is closed —
+  no matter how strong the continuity signal would have been. A semantic chunk
+  therefore never exceeds **1,500 characters**, and a long run of clearly
+  related prose will still be split. This is the single most common reason a
+  boundary looks "wrong".
+</Callout>
+
+## The emitted vocabulary
+
+`primary_merge_reason` is always one of:
+
+`initial` · `reference_continuity` · `elaboration` · `example` ·
+`cause_effect` · `contrast_continuation` · `question_answer` ·
+`definition_expansion` · `short_paragraph` · `list_continuation` ·
+`keyword_overlap` · `structural_boundary`
+
+Two of those never come from the ladder:
+
+- **`initial`** — a chunk built from exactly one block. Nothing was merged, so
+  there is no reason to report. Its `merge_reasons` array is empty.
+- **`structural_boundary`** — the chunk is a code block or a table. Those are
+  always emitted standalone and never participate in merging.
+
+And one name from the ladder is never emitted: **`transition_break`**. It only
+ever *ends* a chunk, so it is never a reason a block joined one.
+
+`merge_reasons` is the deduplicated list of every reason that fired inside the
+chunk, in the order they first fired, with `initial` excluded.
+
+### Deterministic tie-break
+
+`primary_merge_reason` is the reason that fired the most times in that chunk.
+When two reasons tie, the winner is chosen by **count descending, then reason
+name ascending** — so `elaboration` beats `keyword_overlap` on a tie. This is a
+sort, not a hash-map iteration, which is why the three SDKs agree byte-for-byte
+on every chunk.
+
+## The key names differ by format
+
+This is the part that bites cross-format code. Not every format writes the same
+merge keys:
+
+| Format | `merge_reason` | `merge_reasons` | `primary_merge_reason` |
+| --- | --- | --- | --- |
+| Markdown-family (md, html, txt, pdf, epub, rtf, eml/mbox, msg, odt, odp, json, ipynb) | — | yes (array) | yes |
+| DOCX (+ DOCM/DOTX/DOTM) | **yes (string) — the only one** | — | — |
+| PPTX family | yes | yes | yes |
+| PPT | — | — | — (semantic emits no merge metadata at all) |
+| Spreadsheets | — | — | — (grouping metadata instead: `category_column`, `group_index`, `avg_group_size`, …) |
+
+DOCX and PPTX also use vocabulary the markdown ladder does not:
+
+- **DOCX** adds `docx_heading` (chunk opened on a heading paragraph),
+  `heading_merge` (a heading absorbed into the following body) and `size_limit`
+  (the chunk was closed by the cap).
+- **PPTX** adds `single_unit` (the chunk is one whole slide, nothing merged).
+
+Read `metadata.get("primary_merge_reason") or metadata.get("merge_reason")` if
+you want one line that works everywhere.
+
+## Units and formats
+
+| Family | Unit offered to the ladder |
+| --- | --- |
+| Markdown-family | markdown block (paragraph or list). Headings, code blocks and tables bypass the ladder and are emitted standalone. |
+| DOCX, DOC | paragraph |
+| PPTX, PPT | slide |
+| Spreadsheets | row, grouped by a detected category column — a completely different algorithm |
+
+## What it emits
+
+`semantic` mode does **not** emit only `semantic` chunks.
+
+| Format | `content_type` values emitted |
+| --- | --- |
+| Markdown, HTML, TXT, PDF, EPUB, RTF, EML/MBOX, MSG, ODT, ODP, JSON | `semantic`, plus `heading`, `code_block` and `table` wherever the document has them |
+| IPYNB | `code_block` for code cells; `heading` / `semantic` for markdown cells |
+| DOCX, DOC, PPTX family, PPT | `semantic` only |
+| Spreadsheets | `semantic_group` |
+| CSV / TSV | not supported |
+
+Measured: `code_heavy.md` → 13 `semantic` + 22 `heading` + 17 `code_block` +
+2 `table`; `all_round.docx` → 13 `semantic` and nothing else. Lists *are*
+merged into `semantic` chunks — unlike in
+[`sentence`](/docs/chunking-modes/sentence) mode, where they stay
+`bullet_list`.
+
+## Parameters
+
+`semantic` reads none of the four mode parameters. The 1,500-character cap is a
+compile-time constant, not a knob.
+
+## Metadata
+
+Beyond the merge keys, markdown-family semantic chunks carry `heading_path`,
+`section_heading`, `section_level`, `block_types`, `paragraph_count`,
+`has_list`, `keyword_density`, `avg_block_length` and `chunk_index`. Full
+listing in the [Metadata Reference](/docs/metadata-reference).
 
 ## When to use it
 
@@ -28,6 +150,6 @@ similarity), so a chunk may span several source paragraphs that belong together.
 - General-purpose RAG when you're not sure which mode to pick.
 
 <Callout title="Recommended default">
-  Start with `semantic` for LLM/embedding pipelines and `section` for search
-  indexes.
+  Start with `semantic` for LLM/embedding pipelines and
+  [`section`](/docs/chunking-modes/section) for search indexes.
 </Callout>

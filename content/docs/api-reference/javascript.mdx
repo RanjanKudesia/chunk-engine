@@ -1,0 +1,288 @@
+---
+title: JavaScript — js-chunks
+description: Every export from js-chunks, with exact TypeScript declarations, the /web subpath, and an accurate ChunkError contract.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+```bash
+npm install js-chunks
+```
+
+`js-chunks` is the engine compiled to WebAssembly with a TypeScript wrapper.
+The package is **ESM-only** (`"type": "module"`, `"sideEffects": false`); a
+`require()` of it needs Node ≥ 20.19. Declared engine floor is Node ≥ 18. It
+runs on Node, Bun, Deno and in browsers.
+
+## Functions
+
+### getChunks
+
+```ts
+function getChunks(
+  source: ChunkSource,
+  opts?: ChunkOptions & { listImages?: false },
+): Promise<Chunk[]>;
+
+function getChunks(
+  source: ChunkSource,
+  opts: ChunkOptions & { listImages: true },
+): Promise<ChunksWithImages>;
+```
+
+### getMarkdown
+
+```ts
+function getMarkdown(
+  source: ChunkSource,
+  opts?: ChunkOptions & { listImages?: false },
+): Promise<string>;
+
+function getMarkdown(
+  source: ChunkSource,
+  opts: ChunkOptions & { listImages: true },
+): Promise<MarkdownWithImages>;
+```
+
+### streamChunks
+
+```ts
+function streamChunks(
+  source: ChunkSource,
+  opts?: ChunkOptions,
+): AsyncGenerator<Chunk, void, unknown>;
+```
+
+<Callout type="warn" title="streamChunks is ergonomics, not incremental streaming">
+  The WASM boundary is a synchronous full parse. `streamChunks` calls
+  `getChunks`, waits for the complete array, and *then* yields its elements —
+  the whole document and the whole chunk list are in memory before the first
+  `yield`. Results and peak memory are identical to `getChunks`. Use it for
+  `for await` ergonomics and to interleave downstream work with iteration, not
+  to bound memory. `rs-chunks` and `py-chunks` do have truly incremental
+  streaming for some formats; see [Streaming](/docs/streaming).
+</Callout>
+
+### The host-parsed PDF family
+
+For callers who already parsed a PDF with some other tool and want
+chunk-engine's chunking over that Markdown. `.pdf` *sources* are parsed by the
+engine itself — you do not need these to chunk a PDF.
+
+```ts
+function chunkPdfMarkdown(
+  markdown: string,
+  totalPages: number,
+  opts?: ChunkOptions,
+): Promise<Chunk[]>;
+
+function chunkPdfMarkdownWithImages(
+  markdown: string,
+  images: ChunkImage[],
+  totalPages: number,
+  opts?: ChunkOptions,
+): Promise<ChunksWithImages>;
+
+function normalizePdfMarkdown(markdown: string): Promise<string>;
+```
+
+`chunkPdfMarkdownWithImages` expects each supplied image's `name` to match an
+`![](name)` reference in the Markdown. `normalizePdfMarkdown` returns just the
+normalised Markdown string — what `getMarkdown` would have emitted.
+
+## Types
+
+```ts
+interface Chunk {
+  content: string;
+  contentType: string;
+  metadata: Record<string, unknown>;
+}
+
+interface ChunkImage {
+  name: string;
+  data: Uint8Array;
+}
+
+interface ChunksWithImages {
+  chunks: Chunk[];
+  images: ChunkImage[];
+}
+
+interface MarkdownWithImages {
+  markdown: string;
+  images: ChunkImage[];
+}
+```
+
+<Callout type="info">
+  `contentType` is camelCase here — the WASM core emits `content_type`, and the
+  wrapper renames exactly that one field. Keys **inside** `metadata` are not
+  renamed: they stay snake_case, identical to py-chunks and rs-chunks. And
+  `images` is an **array** here, where py-chunks returns a `dict`.
+</Callout>
+
+### ChunkOptions
+
+```ts
+interface ChunkOptions {
+  mode?: ChunkMode;            // default "default"
+  windowSize?: number;         // default 3
+  overlap?: number;            // default 1
+  sentencesPerChunk?: number;  // default 3
+  paragraphsPerPage?: number;  // default 15
+  /** Required when `source` is raw bytes and carries no name of its own. */
+  filename?: string;
+  /** Return extracted embedded images alongside the result. */
+  listImages?: boolean;
+}
+```
+
+There is no JavaScript equivalent of py-chunks' `delimiter` / `encoding` /
+`rows_per_chunk` arguments — CSV and spreadsheet knobs are not exposed through
+this surface.
+
+### ChunkMode
+
+All ten values, exactly as the union declares them:
+
+```ts
+type ChunkMode =
+  | "default"
+  | "section"
+  | "semantic"
+  | "sentence"
+  | "page_aware"
+  | "sliding_window"
+  | "row"
+  | "table"
+  | "sheet"
+  | "structural";
+```
+
+### ByteSource and ChunkSource
+
+```ts
+type ByteSource = Uint8Array | ArrayBuffer | Blob;
+type ChunkSource = string | ByteSource;
+```
+
+A `string` is a **filesystem path**, and only on Node — passing one elsewhere
+throws. Node's `Buffer` is not a separate arm because a `Buffer` *is* a
+`Uint8Array`. A `File` is a `Blob`, so it works and supplies its own `name`;
+an unnamed `Blob` needs `opts.filename`.
+
+## Errors
+
+```ts
+type ChunkErrorKind = "unsupported" | "invalid-arg" | "parse" | "io" | "unknown";
+
+class ChunkError extends Error {
+  readonly kind: ChunkErrorKind;
+}
+```
+
+`ChunkError` covers **every failure the engine raises and every argument
+validation the wrapper performs**:
+
+| Failure | `kind` |
+| --- | --- |
+| Unsupported extension | `"unsupported"` |
+| Unknown mode, bad parameter | `"invalid-arg"` |
+| A filesystem path passed off Node | `"invalid-arg"` |
+| A byte source with no resolvable filename | `"invalid-arg"` |
+| A `source` of an unsupported type | `"invalid-arg"` |
+| `opts` is not an object, or a getter on it throws | `"invalid-arg"` |
+| `filename` / `mode` is not a string; a count is not an integer, is `NaN`, or is negative | `"invalid-arg"` |
+| The document failed to parse | `"parse"` |
+| An I/O failure inside the engine | `"io"` |
+| A path that cannot be read (missing, `EACCES`, `EISDIR`) | `"io"` |
+| A `Blob` whose `arrayBuffer()` rejects | `"io"` |
+| A thrown value carrying no recognised variant tag | `"unknown"` |
+
+<Callout type="info" title="The contract is complete">
+  Reading a **path** on Node goes through `fs.readFileSync` in the wrapper,
+  before the engine is reached — and that read is now wrapped too. A missing
+  file gives you a `ChunkError` with `kind: "io"` whose `message` is Node's own
+  (`ENOENT: no such file or directory, open './report.pdf'`). There is no input
+  for which these functions throw something that is not a `ChunkError`.
+
+  ```ts
+  try {
+    const chunks = await getChunks("./report.pdf");
+  } catch (e) {
+    if (e instanceof ChunkError) {
+      console.error(e.kind, e.message);   // "io" for a missing path
+    } else {
+      throw e;   // still worth keeping: an unexpected error should not be swallowed
+    }
+  }
+  ```
+</Callout>
+
+For **parse** failures raised by the engine, `message` is the engine's own
+message, byte-for-byte what py-chunks raises for the same input; the variant that
+Python expresses as an *exception type* is carried on `kind` instead.
+
+`message` is **not** a cross-SDK contract everywhere, though. Two messages are
+built in each SDK's own host layer and differ in wording: the
+unsupported-extension message and the invalid-mode message. The numeric-range
+sentences (`window_size`, `sentences_per_chunk`, `paragraphs_per_page`) *do*
+agree now — every host layer was aligned on the engine's own wording, across
+both SDKs and across format families. `kind` agrees with Python's exception
+type in every case — **branch on `kind`, log `message`.** See
+[Error Handling](/docs/error-handling).
+
+The wrapper's own type checks are the one place a message is deliberately
+*not* the engine's: they name the **camelCase** key you typed
+(`windowSize must be an integer, got 2.5.`), because a `usize` boundary has no
+counterpart for them. Out-of-range values reuse the engine's snake_case
+sentence instead, so the text is the same whichever side rejects.
+
+## Entry points
+
+```json
+{
+  ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+  "./web": { "types": "./pkg-web/chunks_wasm.d.ts", "default": "./pkg-web/chunks_wasm.js" },
+  "./web/chunks_wasm_bg.wasm": "./pkg-web/chunks_wasm_bg.wasm"
+}
+```
+
+**The default entry (`js-chunks`)** loads the WASM lazily on the first call and
+caches it. On Node it requires the synchronous `pkg-node` build — no async init
+step. Elsewhere it dynamically imports the `pkg-web` build and awaits its
+initialiser for you. This is the entry the API above documents.
+
+**`js-chunks/web`** is the raw wasm-bindgen surface for bundled browser apps
+(Vite, webpack), where a dynamic import of a relative `.js` beside a `.wasm`
+does not survive bundling. You supply the `.wasm` URL and await the init
+yourself, once:
+
+```ts
+import initWasm, * as engine from "js-chunks/web";
+import wasmUrl from "js-chunks/web/chunks_wasm_bg.wasm?url";
+
+await initWasm({ module_or_path: wasmUrl });
+const chunks = engine.getChunks(bytes, "report.docx", "default", 3, 1, 3, 15);
+```
+
+Note the shape: the `/web` functions are the positional wasm-bindgen exports,
+not the ergonomic wrapper — no options object, no overloads, and no
+`ChunkError` wrapping. See
+[Installation](/docs/installation#bundlers-vitewebpack).
+
+## One capability gap versus the native SDKs
+
+PDF *parsing* runs in WASM — the same engine code as py-chunks and rs-chunks.
+What WASM cannot do is *rasterise* a page: the native builds fall back to
+PDFium rendering when a scanned PDF has no extractable text, and that fallback
+is compiled out of the WASM build. A text-less PDF therefore reports that it
+has no text here, instead of returning page images. It is the only deliberate
+behavioural divergence between the SDKs.
+
+## Related
+
+- [Input Sources](/docs/input-sources) — every accepted `source`, with examples.
+- [Framework Integration](/docs/framework-integration/javascript) — Express, Fastify, Hono, Next.js.
+- [Output Schema](/docs/output-schema) — the shape of a `Chunk`.

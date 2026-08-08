@@ -1,74 +1,516 @@
 ---
 title: Input Sources
-description: Pass a path, bytes, a file-like object, a framework upload, or a URL — with the right API for each language.
+description: Every way to hand a document to chunk-engine — path, bytes, file object, upload, URL, Blob — and which of them your SDK actually has.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-All three SDKs dispatch by **file extension**, so a path carries its own
-extension and byte sources need a `filename`.
+All three SDKs dispatch by **file extension**. A path carries its own extension;
+every byte source needs a filename so the engine knows what it is looking at.
+Nothing else about the source changes the output — the same bytes produce the
+same chunks however they arrive.
 
-## Local path
+<LangSelect />
+
+## What each SDK accepts
+
+One table, all three SDKs. "Batch" is the whole-result call; "Stream" is the
+one-chunk-at-a-time iterator.
+
+| Source | Python | JavaScript | Rust |
+| --- | --- | --- | --- |
+| Filesystem path | batch + stream | batch + stream (Node/Bun only) | batch + stream |
+| Raw bytes | batch + stream | batch + stream | batch + per-format stream (PDF, XLSX) |
+| File-like object | batch + stream | — | — |
+| Framework upload | batch + stream | — | — |
+| HTTP(S) / pre-signed URL | batch + stream | — | — |
+| `Blob` / `File` | — | batch + stream | — |
+| Markdown string (host-parsed PDF) | — | batch | — |
+
+Python has the widest surface because it is the SDK that sits behind web
+frameworks; JavaScript and Rust expect you to produce the bytes and hand them
+over. Neither of those is a capability gap in the engine — every source below
+ends in the same two engine calls.
+
+<LangOnly id="py">
+
+Python's source-agnostic surface is **13 functions**: `get_chunks` and five
+`get_chunks_from_*`, `stream_chunks` and five `stream_chunks_from_*`, plus
+`get_markdown`. The `get_chunks` / `stream_chunks` pair sniffs the source and
+forwards to the specific one, so you rarely need the others by name — but they
+exist, they are exported, and calling them directly skips the sniffing.
 
 ```python
-# Python
-from py_chunks import get_chunks
-chunks = get_chunks("/data/report.pdf")
+from py_chunks import (
+    get_chunks,                            # sniffs any of the five below
+    get_chunks_from_path,
+    get_chunks_from_bytes,
+    get_chunks_from_fileobj,
+    get_chunks_from_upload,
+    get_chunks_from_s3_presigned_url,
+    stream_chunks,                         # sniffs any of the five below
+    stream_chunks_from_path,
+    stream_chunks_from_bytes,
+    stream_chunks_from_fileobj,
+    stream_chunks_from_upload,
+    stream_chunks_from_s3_presigned_url,
+    get_markdown,
+)
 ```
+
+`get_chunks` picks a branch in this order: `str`/`os.PathLike` (an `http`/`https`
+scheme routes to the URL helper, anything else to the path helper) →
+`memoryview`/`bytearray`/`bytes` → an object with a `.filename` attribute
+(upload) → an object with `.read()` (file-like) → `TypeError`. Note that the
+upload check comes **before** the file-like check, so any object carrying a
+`filename` attribute takes the upload path.
+
+</LangOnly>
+
+<LangOnly id="js">
+
+JavaScript has **one polymorphic function per operation**, not a family. Every
+source goes through `getChunks` / `getMarkdown` / `streamChunks`, and the
+accepted types are:
 
 ```ts
-// JavaScript (Node / Bun only)
-import { getChunks } from "js-chunks";
-const chunks = await getChunks("./report.pdf");
+type ByteSource = Uint8Array | ArrayBuffer | Blob;
+type ChunkSource = string | ByteSource;
 ```
 
+A Node `Buffer` is a `Uint8Array` and a `File` is a `Blob`, so both are accepted
+structurally. A `DataView`, a non-`Uint8Array` TypedArray, a Node stream or a
+`ReadableStream` are **not** — convert them first.
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+Rust exposes **six source-agnostic functions**, all on the crate root
+(`chunks_rs::`). Three take a path, three take bytes:
+
 ```rust
-// Rust
-let chunks = chunks_rs::get_chunks("report.pdf", "default", 3, 1, 3, 15)?;
+pub fn get_chunks(file_path: &str, mode: &str, window_size: usize, overlap: usize,
+                  sentences_per_chunk: usize, paragraphs_per_page: usize)
+    -> Result<Vec<Chunk>>;
+
+pub fn get_chunks_from_bytes(data: &[u8], filename: &str, mode: &str, window_size: usize,
+                             overlap: usize, sentences_per_chunk: usize,
+                             paragraphs_per_page: usize)
+    -> Result<Vec<Chunk>>;
+
+pub fn get_chunks_with_images_from_bytes(data: &[u8], filename: &str, mode: &str,
+                                         window_size: usize, overlap: usize,
+                                         sentences_per_chunk: usize,
+                                         paragraphs_per_page: usize)
+    -> Result<(Vec<Chunk>, Vec<(String, Vec<u8>)>)>;
+
+pub fn get_markdown(file_path: &str) -> Result<String>;
+pub fn get_markdown_from_bytes(data: &[u8], filename: &str) -> Result<String>;
+pub fn get_markdown_with_images_from_bytes(data: &[u8], filename: &str)
+    -> Result<(String, Vec<(String, Vec<u8>)>)>;
 ```
+
+Two asymmetries are worth internalising before you plan around them:
+
+- **Image extraction at the crate root is bytes-only.** There is no
+  `get_chunks_with_images` and no `get_markdown_with_images` taking a path —
+  `std::fs::read` the file and use the `_from_bytes` variant, or drop to the
+  format module (`formats::docx::chunk_with_images(path, …)`, available for 12
+  formats).
+- **There is no streaming at the dispatch layer at all.** Streaming is
+  per-format: `formats::<fmt>::stream(path, …)`.
+
+</LangOnly>
+
+## Filesystem path
+
+<LangCode id="srcPath" />
+
+<LangOnly id="py">
+
+`get_chunks_from_path` checks the file exists first and raises
+`FileNotFoundError(f"File not found: {file_path}")` before any parsing happens.
+`str` and `pathlib.Path` both work (anything implementing `os.PathLike` does).
+
+Only `http` and `https` are recognised as URL schemes — an `s3://` or `file://`
+string falls through to the path branch and fails as a missing file.
+
+</LangOnly>
+
+<LangOnly id="js">
+
+<Callout type="warn" title="Paths are Node and Bun only">
+  A string source is read with `fs.readFileSync` reached through
+  `createRequire`, gated on a runtime check that requires `process.versions.node`
+  **and** the absence of a `Deno` global. So:
+
+  - **Node** — works.
+  - **Bun** — works (it reports `process.versions.node` and defines no `Deno`).
+  - **Deno** — deliberately excluded, even though modern Deno could serve
+    `node:fs`. A path throws
+    `ChunkError { kind: "invalid-arg" }`: *"Filesystem paths are only supported
+    on Node. Pass a Uint8Array/ArrayBuffer/Blob with opts.filename instead."*
+  - **Browsers** — same error. Use a `Blob`, a `File`, or bytes.
+
+  `opts.filename` overrides the path's basename when present, which is how you
+  chunk `/tmp/upload-a91f` as a `.docx`.
+</Callout>
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+`get_chunks` is the only path-based chunking entry point on the crate root, and
+it takes no `filename` argument — the extension comes from the path. Windows
+paths are fine.
+
+</LangOnly>
 
 ## Raw bytes
 
-When you only have bytes, supply a `filename` so the engine can route by
-extension.
+The common case: you already hold the document in memory and never want it on
+disk.
 
 <LangCode id="inputBytes" />
 
-- **Python**: `get_chunks_from_bytes(data, filename)` — or `get_chunks(data, filename=...)`.
-- **JavaScript**: pass a `Uint8Array`, `ArrayBuffer`, Node `Buffer`, or a named
-  `Blob`; a `Blob` supplies its own name.
-- **Rust**: `get_chunks_from_bytes(&data, filename, mode, window_size, overlap, sentences_per_chunk, paragraphs_per_page)`.
+<Callout type="info" title="Bytes do not touch the filesystem">
+  Since **0.6.1**, byte sources go straight to the engine — no temporary file,
+  no round-trip through disk. The filename you pass is used **only** to pick a
+  parser by extension; nothing is ever written under that name.
 
-## File-like objects & uploads
-
-<Callout type="info" title="Python">
-  `get_chunks_from_fileobj(file_obj, filename=None)` for file-like objects, and
-  `get_chunks_from_upload(upload_file)` for FastAPI / Starlette / Django uploads.
-  If an upload's `read()` is async, read the bytes yourself and use the bytes
-  API. See [Framework Integration](/docs/framework-integration).
+  The one exception is **streaming from bytes**, which does write a temp file.
+  See [Streaming from a non-path source](#streaming-from-a-non-path-source).
 </Callout>
 
-<Callout type="info" title="JavaScript">
-  Pass a `Blob` (browsers), or an `ArrayBuffer` / `Uint8Array` / `Buffer` (Node)
-  with a `filename`. There are no separate helper functions — `getChunks` is
-  polymorphic over the source type.
-</Callout>
+<LangOnly id="py">
 
-<Callout type="info" title="Rust">
-  Read the bytes yourself (`std::fs::read`, an HTTP body, etc.) and call
-  `get_chunks_from_bytes(...)`. The per-format modules under `chunks_rs::formats`
-  also expose `*_from_bytes` entry points.
-</Callout>
+`get_chunks(data, filename=...)` and `get_chunks_from_bytes(data, filename)` are
+the same call; the latter makes `filename` positional and required.
+`bytearray` and `memoryview` are converted for you.
 
-## Remote / URL sources
+Two errors to expect:
 
-- **Python**: `get_chunks_from_s3_presigned_url(url, filename=None, timeout=60)`,
-  or `get_chunks("https://…")` which auto-detects `http`/`https`.
-- **JavaScript / Rust**: fetch the bytes first, then pass them with a `filename`.
+- `ValueError("filename is required when source is bytes")` — from `get_chunks`
+  when you omit it.
+- `ValueError("data is empty")` — zero-length input is rejected up front rather
+  than parsed into nothing.
+
+</LangOnly>
+
+<LangOnly id="js">
+
+`Uint8Array`, `ArrayBuffer` and Node `Buffer` all work, and all of them require
+`opts.filename` — none of them carries a name.
 
 ```ts
-// JavaScript
-const res = await fetch(url);
-const bytes = new Uint8Array(await res.arrayBuffer());
-const chunks = await getChunks(bytes, { filename: "report.pdf" });
+throw new ChunkError(
+  "A filename is required for byte sources (pass opts.filename or a named Blob) " +
+    "so the engine can route by extension.",
+  "invalid-arg",
+);
 ```
+
+A `Uint8Array` is handed to WASM without being copied, so do not mutate the
+buffer while the call is in flight.
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+`filename` is `&str` and only its extension matters — `"x.docx"` is as good as
+`"/original/path/report.docx"`.
+
+For images from bytes, the shape changes to a tuple and the images are
+`(name, bytes)` pairs:
+
+```rust
+let (chunks, images) = chunks_rs::get_chunks_with_images_from_bytes(
+    &data, "report.docx", "default", 3, 1, 3, 15,
+)?;
+```
+
+</LangOnly>
+
+## Blob and File
+
+<LangOnly id="js">
+
+A `File` — from `<input type="file">`, a drag-drop handler, or a `FormData`
+entry — carries `.name`, so the engine can route without help. A bare `Blob`
+does not, and needs `opts.filename`.
+
+<LangCode id="srcFileobj" />
+
+A bare `Blob` — from `fetch(...).blob()`, a canvas, a generated payload — has no
+name at all:
+
+<LangCode id="srcBlob" />
+
+`opts.filename` still wins over a `File`'s own name if you want to force the
+routing extension. An empty-string name counts as no name.
+
+</LangOnly>
+
+<LangOnly id="py, rs">
+
+<Callout type="info">
+  `Blob` and `File` are JavaScript types — this section only applies to
+  `js-chunks`. Switch the language selector above to see it.
+
+  <LangOnly id="py">
+    The Python equivalent is a **file-like object** — see the next section.
+  </LangOnly>
+  <LangOnly id="rs">
+    In Rust, read the bytes and use `get_chunks_from_bytes`.
+  </LangOnly>
+</Callout>
+
+</LangOnly>
+
+## File-like objects
+
+<LangOnly id="py">
+
+`get_chunks_from_fileobj(file_obj, filename=None)` accepts anything with
+`.read()` — an open file, a `BytesIO`, a `tempfile`, a socket-backed reader.
+
+<LangCode id="srcFileobj" />
+
+Behaviour worth knowing:
+
+- **Filename inference** is `filename or getattr(file_obj, "name", None)`. An
+  `open()` handle supplies it; a `BytesIO` does not, so name it or you get
+  `ValueError("filename is required when file object has no name")`.
+- **Text mode works**: a `str` from `.read()` is re-encoded as UTF-8. That
+  ignores the file's own encoding, so open binary files in `"rb"`.
+- **The object is not rewound.** `.read()` is called once, with no `seek(0)`, so
+  a stream you already consumed yields `b""` and then
+  `ValueError("data is empty")`.
+
+</LangOnly>
+
+<LangOnly id="js, rs">
+
+<Callout type="info">
+  Only `py-chunks` has a file-object entry point.
+
+  <LangOnly id="js">
+    In JavaScript, read the stream into a `Uint8Array` (or wrap it in a `Blob`)
+    and pass `opts.filename`.
+  </LangOnly>
+  <LangOnly id="rs">
+    In Rust, read the reader into a `Vec<u8>` and call `get_chunks_from_bytes`.
+  </LangOnly>
+</Callout>
+
+</LangOnly>
+
+## Framework uploads
+
+<LangOnly id="py">
+
+`get_chunks_from_upload(upload_file)` takes a FastAPI / Starlette `UploadFile`,
+a Django `UploadedFile`, or anything else with a `.filename` attribute.
+
+<LangCode id="srcUpload" />
+
+<Callout type="warn" title="Prefer upload_file.file for async frameworks">
+  The helper reads `upload_file.file` — the underlying `SpooledTemporaryFile` —
+  when it is present, and only falls back to `upload_file.read()` when it is
+  not. That ordering is what makes it safe in a **sync** handler: FastAPI's
+  `UploadFile.read()` is a coroutine, and awaiting it is not possible there.
+
+  If the fallback does hit a coroutine it raises
+  `TypeError("upload_file.read() is async; pass upload_file.file or use bytes API")`
+  rather than failing obscurely. In an `async def` handler, either pass
+  `file.file` explicitly or `await file.read()` yourself and use the bytes API.
+</Callout>
+
+The filename comes from `upload_file.filename`; a missing or empty one raises
+`ValueError("upload_file.filename is required")`. See
+[Framework Integration](/docs/framework-integration) for complete handlers.
+
+</LangOnly>
+
+<LangOnly id="js, rs">
+
+<Callout type="info">
+  Only `py-chunks` has an upload entry point, because the upload objects it
+  targets are Python web-framework types.
+
+  <LangOnly id="js">
+    In an Express or Hono handler, a `multipart/form-data` field arrives as a
+    `File` (Web `FormData`) or a `Buffer` (multer) — both are already accepted
+    sources. See [Framework Integration](/docs/framework-integration).
+  </LangOnly>
+  <LangOnly id="rs">
+    In Axum, a `Multipart` field gives you `Bytes` and `file_name()` — feed both
+    to `get_chunks_from_bytes`.
+  </LangOnly>
+</Callout>
+
+</LangOnly>
+
+## URLs and pre-signed links
+
+<LangCode id="srcUrl" />
+
+<LangOnly id="py">
+
+`get_chunks_from_s3_presigned_url(url, filename=None, timeout=60)` downloads
+with `urllib.request.urlopen` and chunks the bytes in memory. `get_chunks` routes
+any `http`/`https` string here automatically.
+
+The filename defaults to the last path segment of the URL, with the query string
+stripped — so an S3 signature does not end up looking like an extension. If the
+path has no final segment you get
+`ValueError("filename is required when URL path has no filename")`; pass
+`filename=` for pre-signed links that carry an opaque key.
+
+<Callout type="warn" title="get_markdown does not accept URLs">
+  `get_markdown` has a **narrower** source list than `get_chunks`, and its path
+  branch is a literal `Path(source).is_file()` check. A URL string is not a
+  file, so it raises `FileNotFoundError: File not found: https://…` — it does
+  not download anything.
+
+  `get_markdown` also has **no upload branch**: pass a FastAPI `UploadFile` and
+  it falls through to the file-like branch, where the async `read()` fails
+  unhelpfully. Pass `upload_file.file`, or read the bytes and call
+  `get_markdown(data, filename="report.pdf")`.
+
+  Accepted by `get_markdown`: `str` / `pathlib.Path` (existing file),
+  `bytes` / `bytearray` / `memoryview` (with `filename=`), and any object with
+  `.read()` (with `filename=` or a `.name`).
+</Callout>
+
+</LangOnly>
+
+<LangOnly id="js, rs">
+
+There is no URL helper — fetch the bytes yourself and pass them with a filename.
+That is a deliberate omission, not a gap: your HTTP client already handles the
+auth, retries, proxies and timeouts an in-library downloader would have to
+reinvent.
+
+</LangOnly>
+
+## Streaming from a non-path source
+
+<LangCode id="srcStreamBytes" />
+
+<LangOnly id="py">
+
+<Callout type="warn" title="This is the one source that writes to disk">
+  The engine's streaming surface is path-based. `stream_chunks_from_bytes`
+  therefore writes the bytes to a `NamedTemporaryFile` (suffixed with the real
+  extension), builds the iterator over it, and deletes it again — on iterator
+  exhaustion, on an exception during iteration, on an explicit `.close()`, on
+  leaving a `with` block, and as a last resort in `__del__`.
+
+  `stream_chunks_from_fileobj`, `stream_chunks_from_upload` and
+  `stream_chunks_from_s3_presigned_url` all funnel through it, so **every
+  non-path streaming source** materialises a temp file. Batch sources never do.
+
+  Use `with` (the returned iterator is a context manager) or drain it fully; an
+  abandoned half-read iterator only cleans up when the garbage collector gets to
+  it.
+</Callout>
+
+`list_images` is a batch-only option — no `stream_*` function accepts it.
+
+</LangOnly>
+
+<LangOnly id="js">
+
+`streamChunks` accepts exactly the same sources as `getChunks`. Be clear-eyed
+about what it buys you: the WASM boundary is a synchronous full parse, so the
+whole chunk array exists before the first `yield`. It is async-iteration
+ergonomics — useful for overlapping embedding work with iteration — not bounded
+memory. `listImages` is forced to `false` inside it.
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+Streaming lives on the format modules. Seventeen of them expose
+`stream(path, …)`; only **`pdf` and `xlsx`** additionally expose
+`stream_from_bytes`. There is no bytes streaming on the dispatch layer.
+
+Note that most prose formats' `stream` is an eager `chunk(...)` fed through
+`into_iter()` — genuinely incremental backends exist for PDF (`"default"` mode),
+CSV and XLSX. [Streaming](/docs/streaming) has the per-format truth.
+
+</LangOnly>
+
+## Markdown you already parsed
+
+<LangOnly id="js">
+
+If another tool produced the Markdown — a hosted PDF service, a scraper, an OCR
+pass — you can hand the string to the engine's chunker directly and skip parsing
+entirely.
+
+<LangCode id="srcMarkdownIn" />
+
+- `chunkPdfMarkdown(markdown, totalPages, opts?)` — `markdown` and `totalPages`
+  are required positionals; `totalPages` populates
+  `document_metadata.total_pages`.
+- `chunkPdfMarkdownWithImages(markdown, images, totalPages, opts?)` — always
+  resolves to `{ chunks, images }` regardless of `opts.listImages`, image chunks
+  first. Each image's `name` must match its `![](name)` reference in the string.
+- `normalizePdfMarkdown(markdown)` — the engine's normalisation step alone, when
+  you want the cleaned string rather than chunks.
+
+These are the calls the [playground](/playground) runs.
+
+</LangOnly>
+
+<LangOnly id="py, rs">
+
+<Callout type="info">
+  The Markdown-string entry points (`chunkPdfMarkdown`,
+  `chunkPdfMarkdownWithImages`, `normalizePdfMarkdown`) are **JavaScript-only**.
+
+  <LangOnly id="py">
+    In Python, write the Markdown to a `.md` file or pass it as bytes with
+    `filename="doc.md"` — you get the Markdown chunking pipeline, minus the
+    PDF-specific page metadata.
+  </LangOnly>
+  <LangOnly id="rs">
+    In Rust, pass the string's bytes with a `.md` filename to
+    `get_chunks_from_bytes` — you get the Markdown chunking pipeline, minus the
+    PDF-specific page metadata.
+  </LangOnly>
+</Callout>
+
+</LangOnly>
+
+## Bundled browsers
+
+<LangOnly id="js">
+
+The default `js-chunks` entry resolves the browser WASM build through a dynamic
+import that is deliberately hidden from bundlers, so a **bundled** app must
+import the web build explicitly and serve the `.wasm` as an asset. That path is
+the raw wasm-bindgen surface — positional arguments, snake_case chunk fields —
+and it accepts bytes only. See
+[Installation → Bundlers](/docs/installation#bundlers-vitewebpack).
+
+</LangOnly>
+
+<LangOnly id="py, rs">
+
+<Callout type="info">
+  Browser packaging concerns `js-chunks` only.
+</Callout>
+
+</LangOnly>
+
+## Next steps
+
+- [Output Schema](/docs/output-schema) — what comes back, whatever went in
+- [Streaming](/docs/streaming) — the honest per-format, per-runtime matrix
+- [Error Handling](/docs/error-handling) — what each bad source raises
+- [Framework Integration](/docs/framework-integration) — FastAPI, Express, Axum
+- [API Reference](/docs/api-reference) — every signature, per language

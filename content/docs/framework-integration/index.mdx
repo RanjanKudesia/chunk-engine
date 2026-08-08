@@ -28,6 +28,30 @@ warm-up. That makes web integration the same everywhere, in every language:
   <Card title="Rust" href="/docs/framework-integration/rust" description="Axum, Actix Web, Rocket, Warp." />
 </Cards>
 
-For streaming responses (forwarding chunks as NDJSON while the document is still
-parsing), see [Streaming](/docs/streaming) — each language page includes a
-streaming handler where the framework supports it.
+## Streaming responses
+
+All three language pages now carry an NDJSON streaming handler:
+
+| Language | Handler |
+| --- | --- |
+| Python | [FastAPI `StreamingResponse`](/docs/framework-integration/python#fastapi--streaming-response) |
+| JavaScript | [Next.js `ReadableStream` and Express](/docs/framework-integration/javascript#streaming-an-ndjson-response) |
+| Rust | [Axum NDJSON body](/docs/framework-integration/rust#axum--streaming-ndjson) |
+
+<Callout type="warn" title="“Streaming” doesn't mean bounded memory">
+  Forwarding chunks as NDJSON always makes the response incrementally
+  consumable, but only three formats (PDF, spreadsheets, CSV) parse
+  incrementally, and only in native Rust and Python. JavaScript's `streamChunks`
+  computes the whole array before it yields the first item. Read
+  [Streaming](/docs/streaming) before you rely on a handler to survive a file
+  that `getChunks` could not.
+</Callout>
+
+## Errors
+
+Each page's handlers assume the happy path; map failures onto status codes
+explicitly. The [Rust page](/docs/framework-integration/rust#axum--with-real-error-mapping)
+has a complete `ChunkError → IntoResponse` mapping (415 / 400 / 422 / 500) and
+the [JavaScript page](/docs/framework-integration/javascript#errors) has the
+same table for `ChunkError.kind`. The full contract is in
+[Error Handling](/docs/error-handling).

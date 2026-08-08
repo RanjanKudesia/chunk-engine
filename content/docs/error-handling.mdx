@@ -1,6 +1,6 @@
 ---
 title: Error Handling
-description: What raises, when, and how to handle it robustly.
+description: What raises, when, with which exact message — and where the three SDKs still differ.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -10,16 +10,133 @@ differs:
 
 | Language | How errors surface |
 | --- | --- |
-| **Python** | Raises exceptions (`ValueError`, `TypeError`, `FileNotFoundError`, …). |
-| **JavaScript** | Rejected promises carrying a `ChunkError` — an `Error` subclass with a `kind`. Use `try/catch` with `await`. |
-| **Rust** | Returns `Err(ChunkError)`. Adversarial inputs fail cleanly and **never panic** (panic-prone third-party parsers are wrapped). |
+| **Python** | Raises exceptions (`ValueError`, `TypeError`, `FileNotFoundError`, `RuntimeError`, `OSError`). |
+| **JavaScript** | Throws / rejects with a `ChunkError` — an `Error` subclass with a `kind`. Every failure, engine-side and host-side, arrives this way. |
+| **Rust** | Returns `Err(ChunkError)`. Adversarial inputs fail cleanly and **never panic** (panic-prone third-party parsers are wrapped in a `catch_unwind` boundary). |
 
-## Typed errors in JavaScript
+<LangSelect />
 
-Every engine failure throws a `ChunkError`, exported from the package alongside
-its `ChunkErrorKind` union. The `message` is the same message py-chunks raises
-for the same input — that is the cross-SDK parity contract — and the variant
-Python expresses as an *exception type* is restored on `kind`.
+<LangCode id="errorHandling" />
+
+## The variant table
+
+The engine has four error variants. Each SDK expresses them in its own idiom;
+this is the mapping, read from the bindings:
+
+| Rust variant | JS `kind` | Python exception | Raised when |
+| --- | --- | --- | --- |
+| `ChunkError::Unsupported` | `"unsupported"` | `ValueError` | Unsupported extension or capability. |
+| `ChunkError::InvalidArg` | `"invalid-arg"` | `ValueError` | Bad mode or parameter. |
+| `ChunkError::Parse` | `"parse"` | `RuntimeError` | The document failed to parse or decode. |
+| `ChunkError::Io` | `"io"` | **`OSError`** (`IOError` is the same class) | An I/O failure inside the engine. |
+| *(a future variant)* | `"unknown"` | **`RuntimeError`** | The failure carried no recognised variant tag. `ChunkError` is `#[non_exhaustive]`, so both SDKs have a fallback arm rather than a build break. |
+
+<Callout type="info" title="These last two rows used to say “—”">
+  They were never blank in the code. `ChunkError::Io` maps to `PyIOError` and
+  the `non_exhaustive` fallback maps to `PyRuntimeError`, both in
+  `py_chunks/src/engine.rs`.
+</Callout>
+
+## Message parity — and where it stops
+
+**Parse** messages produced by the engine are byte-identical across the SDKs. A
+corrupt DOCX raises exactly the same sentence everywhere — verified live, on
+both the path and the bytes route:
+
+```
+DOCX is not a valid zip archive: invalid Zip archive: Could not find EOCD
+```
+
+<Callout type="warn" title="Branch on `kind`, not on message text">
+  The **parameter-range** sentences now agree. Some formats validate their
+  numeric ranges in the SDK's own host layer rather than in the engine, but
+  every one of those layers has been aligned on the engine's own wording, so
+  `window_size must be greater than 0`, `sentences_per_chunk must be greater
+  than 0`, `paragraphs_per_page must be greater than 0` and `overlap must be
+  less than window_size` are byte-identical across all three SDKs and all
+  formats. (Where a format *renames* the parameter the sentence names the
+  format's own knob — CSV/TSV report `rows_per_chunk must be greater than 0`
+  for a zero `paragraphs_per_page`, because that is what the value maps onto.)
+
+  Two host-layer messages still differ between SDKs, and they are covered
+  below: the **unsupported-extension** message and the **invalid-mode**
+  message.
+
+  So still do not match on message text. The reliable contract is the **`kind`**
+  (`"invalid-arg"`) in JavaScript and Rust and the **exception type**
+  (`ValueError`) in Python — those agree across all three SDKs and all formats.
+  Treat `message` as something to log and show, not something to branch on.
+</Callout>
+
+Two further gaps sit in messages Python builds in its **own** validation layer,
+before the engine is reached.
+
+**1. The unsupported-extension message.** Python appends the full supported set,
+JavaScript does not:
+
+```
+py:  ValueError: Unsupported file type '.zip'. Supported: .csv, .doc, .docm, … .xltx
+js:  ChunkError: Unsupported file type '.zip'          (kind "unsupported")
+```
+
+**2. The invalid-mode message.** Python rejects an unknown `mode` in its own
+dispatch layer using one uniform template with a sorted list; JavaScript passes
+the mode through and surfaces whatever the engine's per-format check says. The
+wording therefore differs **per format**, not just in ordering and quoting:
+
+```
+md    py: mode must be one of ['default', 'page_aware', 'section', 'semantic', 'sentence', 'sliding_window', 'structural'] for MD, got: 'nope'
+      js: mode must be one of ["default", "structural", "section", "semantic", "sentence", "page_aware", "sliding_window"] for MD, got: 'nope'
+
+txt   py: mode must be one of ['default', 'page_aware', … 'structural'] for TXT, got: 'nope'
+      js: Unknown TXT mode: nope
+
+csv   py: mode must be one of ['default', 'page_aware', 'row', 'sliding_window'] for CSV, got: 'nope'
+      js: mode must be 'row', 'default', 'sliding_window', or 'page_aware' for CSV
+```
+
+Both SDKs agree on the *classification* — `ValueError` in Python,
+`kind: "invalid-arg"` in JavaScript — for every format. Only the sentence
+differs. Do not pattern-match an invalid-mode message across SDKs.
+
+<Callout type="info" title="`kind` is a reliable argument/parse split">
+  Every caller-argument mistake — unknown `mode`, `overlap >= window_size`,
+  `window_size = 0`, `sentences_per_chunk = 0`, `paragraphs_per_page = 0` —
+  arrives as `kind: "invalid-arg"` in JavaScript and `ValueError` in
+  Python, for every format and on both the path and the bytes route. Branch on
+  `kind` (or on the exception type in Python); it is the stable signal.
+  Engine-raised message *text* is byte-identical across SDKs and safe to match
+  on too, but the two host-layer messages above are not.
+
+  **Range checks are scoped to the mode that reads the parameter**, which is
+  what you want: `paragraphs_per_page = 0` is rejected in `page_aware` and
+  ignored in `default`, exactly as `window_size = 0` is rejected in
+  `sliding_window` and ignored elsewhere. A parameter a mode never reads is
+  never validated against.
+</Callout>
+
+<Callout type="info" title="EPUB validates its arguments (fixed)">
+  EPUB used to be the one format whose chunkers skipped the shared argument
+  check: `getChunks("book.epub", { mode: "sliding_window", windowSize: 100, overlap: 100 })`
+  returned an **empty array** instead of throwing, and it did so in **all three
+  SDKs** — Python's `chunkers/epub.py` checked the `mode` string and nothing
+  else, so `get_chunks(..., window_size=100, overlap=100)` also returned `[]`.
+  (An earlier version of this page said Python still raised `ValueError`. It
+  did not.)
+
+  EPUB now runs the same validator as every other format, at all four entry
+  points and before the book is parsed, on both the path and the bytes route:
+
+  ```
+  py: ValueError: overlap must be less than window_size
+  js: ChunkError: overlap must be less than window_size     (kind "invalid-arg")
+  ```
+
+  Valid calls are unaffected — Moby Dick still returns 1,440 chunks at the
+  defaults. There is no longer any format for which a bad argument is silent.
+</Callout>
+
+## JavaScript: `ChunkError` covers the whole surface
 
 ```ts
 import { getChunks, ChunkError, type ChunkErrorKind } from "js-chunks";
@@ -29,71 +146,171 @@ try {
 } catch (e) {
   if (e instanceof ChunkError) {
     e.kind;    // "unsupported" | "invalid-arg" | "parse" | "io" | "unknown"
-    e.message; // what py-chunks raises for the same input
+    e.message; // the engine's message, byte-identical to py-chunks
+  } else {
+    throw e;   // see below
   }
 }
 ```
 
-| `kind` | Raised when | Python equivalent |
-| --- | --- | --- |
-| `unsupported` | Unsupported extension or capability. | `ValueError` |
-| `invalid-arg` | Bad mode or parameter. | `ValueError` |
-| `parse` | The document failed to parse. | `RuntimeError` |
-| `io` | An I/O failure inside the engine. | — |
-| `unknown` | The failure carried no recognised variant tag. | — |
+Every engine failure is a `ChunkError`, and so is every host-side throw the
+wrapper performs before the engine is reached:
 
-Messages raised by the engine itself are byte-identical across the SDKs.
-The few errors py-chunks raises in its own Python layer — an invalid `mode`, an
-unsupported extension — match at the prefix, so match on `kind` rather than on
-an exact string.
+| Host-side failure | `kind` | Example message |
+| --- | --- | --- |
+| A filesystem path used off Node | `"invalid-arg"` | |
+| An unsupported `source` type | `"invalid-arg"` | |
+| Byte input with no resolvable filename | `"invalid-arg"` | `A filename is required for byte sources …` |
+| `opts` is not an object (a string, a number) | `"invalid-arg"` | `opts must be an object, got string.` |
+| A **getter** on `opts` throws | `"invalid-arg"` | `opts.windowSize could not be read: boom` |
+| `filename` / `mode` is not a string | `"invalid-arg"` | `filename must be a string, got number.` |
+| A numeric option is not a number, or is `NaN` | `"invalid-arg"` | `windowSize must be a number, got string.` |
+| A numeric option is fractional | `"invalid-arg"` | `windowSize must be an integer, got 2.5.` |
+| A numeric option is negative | `"invalid-arg"` | `window_size must be greater than 0` |
+| A path that cannot be read (missing file, permissions, a directory) | `"io"` | `ENOENT: no such file or directory, open './missing.md'` |
+| A `Blob` whose `arrayBuffer()` rejects | `"io"` | the rejection's own message |
+
+The contract is complete: there is no input for which `getChunks` /
+`getMarkdown` / `streamChunks` throws something that is not a `ChunkError`.
+`getChunks(bytes, null)` is treated as `getChunks(bytes)` — `null` is how an
+untyped caller spells "no options" — so it fails on the missing filename, with
+`kind: "invalid-arg"`, rather than on a dereference.
+
+<Callout type="info" title="Two deliberate choices in that table">
+  **Out-of-range numbers reuse the engine's sentence** (`window_size must be
+  greater than 0`, snake_case), so the message is the same whichever side
+  rejects. **Type mistakes name the camelCase key you actually typed**
+  (`windowSize must be an integer`), because they have no engine counterpart.
+
+  **Zero is left to the engine.** `windowSize: 0` and `paragraphsPerPage: 0`
+  are not caught host-side, so the message names the parameter the *target
+  format* uses — `paragraphsPerPage: 0` on a CSV reports `rows_per_chunk must
+  be greater than 0`, which is the knob that value actually maps onto. A
+  host-side duplicate would have replaced that with a misleading sentence.
+  `overlap: 0` remains legal.
+
+  A failed `Blob` read reports `kind: "io"`, matching what the path branch
+  reports for the same condition: the source's bytes could not be obtained.
+</Callout>
+
+<Callout type="info" title="A missing file is a ChunkError with kind io">
+  `getChunks("./missing.md")` reads the path with `node:fs`, and that read is
+  now wrapped. Node's message is preserved verbatim:
+
+  ```
+  ChunkError: ENOENT: no such file or directory, open './missing.md'
+    e instanceof ChunkError → true
+    e.kind                  → "io"
+  ```
+
+  Verified live against the current build. Python raises
+  `FileNotFoundError: File not found: ./missing.md` for the same input — the
+  classification now matches (both say "this path could not be read"), but the
+  message text still differs, so do not match on it across SDKs.
+
+  Keeping an `else { throw e }` in a `catch` that narrows on `ChunkError` is
+  still good practice — it lets genuinely unexpected errors (a bug in your own
+  callback, an `AbortError`) propagate instead of being swallowed.
+</Callout>
 
 <Callout type="info" title="Upgrading">
   Earlier releases threw bare strings across the WASM boundary, so
-  `e instanceof Error` was `false` and there was no `.stack`. Failures are now
-  always real `Error` instances. Code that only did `String(e)` keeps working;
-  narrowing with `e instanceof ChunkError` is what gets you `kind`.
+  `e instanceof Error` was `false` and there was no `.stack`. Engine failures are
+  now always real `Error` instances. Code that only did `String(e)` keeps
+  working; narrowing with `e instanceof ChunkError` is what gets you `kind`.
 </Callout>
 
-The examples below are Python, but the cases — and the fix for each — are the
-same in every language.
+## Python exception reference
+
+Every exception py-chunks raises in its own Python layer, before the engine is
+reached. Read from `py_chunks/_sources.py` and `py_chunks/_dispatch.py`.
+
+| Exception | Message | Raised when |
+| --- | --- | --- |
+| `FileNotFoundError` | `File not found: {path}` | The path does not exist. Checked **before** the extension, so a missing `archive.zip` is a `FileNotFoundError`, not an unsupported-type error. |
+| `ValueError` | `data is empty` | A bytes source is empty (`b""`). |
+| `ValueError` | `filename is required when source is bytes` | Bytes passed with no `filename=`. |
+| `ValueError` | `filename is required when file object has no name` | A file-like object with no `.name` and no `filename=`. |
+| `ValueError` | `filename is required when URL path has no filename` | A URL whose path has no final segment. |
+| `ValueError` | `upload_file.filename is required` | An upload object whose `.filename` is empty. |
+| `ValueError` | `Unsupported file type '{ext}'. Supported: {list}` | Extension not in the dispatch table. |
+| `ValueError` | `get_markdown does not support '{ext}'. Supported: {list}` | Extension has no Markdown converter. |
+| `TypeError` | `Unsupported source type. Use path/URL, bytes, file-like object, or upload object.` | The source matched none of the accepted shapes. |
+| `TypeError` | `upload_file.read() is async; pass upload_file.file or use bytes API` | `.read()` returned an awaitable. |
+| `TypeError` | `{what}.read() must return bytes or str` | A file-like or upload `.read()` returned something else. |
+| `TypeError` | `upload_file must provide .file.read() or .read()` | The upload object exposes neither. |
+| `NotImplementedError` | `Streaming not yet supported for {ext} files` | No streaming entry point for the extension. All 36 supported extensions have one, so this is currently unreachable. |
+
+Every `stream_chunks_from_*` helper raises the same set as its `get_chunks_from_*`
+counterpart, and every format-specific `stream_chunk_<fmt>()` helper now runs the
+same mode and range validation as its batch counterpart. A mis-typed `mode` or a
+zero count raises `ValueError` from the streaming helpers too, on the first call
+rather than on the first `next()` — `stream_chunk_doc` and `stream_chunk_ppt`
+used to silently stream *default-mode* chunks for an unknown mode, and
+`stream_chunk_docx` used to raise `NotImplementedError: Streaming for <mode>
+mode coming soon`. Neither happens any more.
+
+<Callout title="bytes and path validate identically">
+  Passing bytes is not a way around validation. The bytes route runs the same
+  Python-side option validators as the path route, so a bad `mode`,
+  `overlap >= window_size`, `sentences_per_chunk = 0` and an unsupported
+  extension all produce the **same exception type and the same message string**
+  whether you passed a path or `(data, filename)`. Verified live for all four.
+
+  One asymmetry remains, and it is Python-only: `get_chunks(b"", filename="a.md")`
+  raises `ValueError: data is empty` from the host layer, while JavaScript has no
+  such generic check and lets the engine answer —
+  `ChunkError(kind: "parse"): Markdown file is empty after decoding`.
+</Callout>
 
 ## Unsupported or mismatched extension
 
 Dispatch is by file extension. If the extension isn't supported — or the
-`filename` you pass with bytes doesn't match the actual content — you'll get an
-error identifying the unsupported type.
-
-```python
-from py_chunks import get_chunks
-
-try:
-    chunks = get_chunks("archive.zip")
-except (ValueError, Exception) as e:
-    print("Could not chunk:", e)
-```
+`filename` you pass with bytes doesn't match the actual content — you get an
+error naming the unsupported type.
 
 <Callout type="warn" title="Bytes need a filename">
   When passing raw bytes, always include `filename=` (or use
-  `get_chunks_from_bytes(data, filename)`). Without an extension py-chunks can't
-  pick a chunker.
+  `get_chunks_from_bytes(data, filename)` / a named `Blob`). Without an
+  extension there is no way to pick a chunker.
 </Callout>
 
 ## Invalid mode parameters
 
-Mode parameters are validated. Common cases:
-
-- `sliding_window`: `window_size` must be &gt; 0 and `overlap` must be &lt;
-  `window_size`.
+- `sliding_window`: `window_size` must be &gt; 0 and `overlap` must be **strictly
+  less than** `window_size` — it is not clamped.
 - `sentence`: `sentences_per_chunk` must be &gt; 0.
-- Passing a `mode` a format doesn't support raises an error.
+- `page_aware`: `paragraphs_per_page` must be &gt; 0.
+- Passing a `mode` a format doesn't support raises, and the message names the
+  modes that format does accept.
 
-```python
-# raises: overlap must be less than window_size
-get_chunks("f.pdf", mode="sliding_window", window_size=2, overlap=2)
+All of these are `ValueError` in Python and `kind: "invalid-arg"` in JavaScript,
+for **every** format — EPUB included — and on both the path and the bytes
+route. The range **sentences** are uniform too: the document formats and the
+spreadsheet family now use the same wording, and so do all three SDKs.
+
+```
+overlap must be less than window_size
+window_size must be greater than 0
+sentences_per_chunk must be greater than 0
+paragraphs_per_page must be greater than 0
+rows_per_chunk must be greater than 0     # CSV / TSV, which is what
+                                          # paragraphs_per_page maps onto there
+```
+
+The **invalid-mode** sentence is the one that still varies — the two samples
+below are the JavaScript/engine form, and Python words it differently (see the
+message-parity section above). Treat them as illustrative, not a contract:
+branch on `kind` / the exception type.
+
+```
+mode must be one of [page_aware, row, semantic, sheet, sliding_window, table] for XLSX, got: 'nope'
+mode must be 'row', 'default', 'sliding_window', or 'page_aware' for CSV
 ```
 
 ## Async uploads
 
+<LangOnly id="py">
 If you pass an upload object whose `read()` is a coroutine, py-chunks raises a
 `TypeError`:
 
@@ -105,21 +322,44 @@ In async handlers, read the bytes yourself and use the bytes API:
 data = await file.read()
 chunks = get_chunks_from_bytes(data, file.filename)
 ```
+</LangOnly>
+
+<LangOnly id="js, rs">
+This case is Python-specific — it exists because Python upload objects
+(`UploadFile`, Django's `UploadedFile`, …) may expose an async `read()`. Switch
+to Python above to read it.
+</LangOnly>
+
+## Known limitation: angle-bracketed text in chunk content
+
+<Callout type="warn" title="Angle-bracketed text is dropped from chunk content">
+  For the eleven formats that render through the shared Markdown pipeline —
+  **`.md`**, `.eml`, `.mbox`, `.msg`, `.odt`, `.odp`, `.rtf`,
+  `.json`/`.jsonl`/`.ndjson`, `.ipynb`, `.pdf` and `.epub` — text wrapped in
+  angle brackets is removed from `get_chunks` content, because the pipeline
+  treats `<…>` as raw inline HTML. `get_markdown` is **not** affected and
+  returns the full text. DOCX, TXT, HTML and the spreadsheet family use
+  separate chunkers and are unaffected.
+
+  **Markdown is affected, and it is the case most likely to bite you.** A `.md`
+  file containing `Use <Placeholder> and <bbb@ddd.com> and generic<T> here.`
+  chunks as `Use  and  and generic here.` For a real Markdown file this is
+  *correct CommonMark behaviour* — `<…>` is raw inline HTML by specification —
+  so it is a documented behaviour rather than a bug. It still costs you text
+  you probably meant to keep: escape (`\<T\>`), fence as code (`` `<T>` ``),
+  or read from `get_markdown`.
+
+  For the other formats the source was never Markdown — the pipeline's own
+  renderer introduced the `<…>`, so the loss there is a genuine bug and is
+  being fixed. The most visible case is **email addresses in message headers**:
+  `From: John X. Doe <bbb@ddd.com>` chunks as `From: John X. Doe`.
+</Callout>
 
 ## Corrupt or unreadable files
 
-Malformed documents surface parsing errors from the underlying engine. Wrap
-calls in `try/except` and treat failures per-document so one bad file doesn't
-halt a batch:
-
-```python
-results = []
-for path in paths:
-    try:
-        results.append((path, get_chunks(path)))
-    except Exception as e:
-        results.append((path, {"error": str(e)}))
-```
+Malformed documents surface parsing errors from the underlying engine. Treat
+failures per-document so one bad file doesn't halt a batch — see the
+[batch recipe](/docs/recipes#8-batch-a-folder-of-mixed-formats).
 
 ## Scanned / image-only PDFs
 
@@ -166,8 +406,7 @@ first.` — convert it (e.g. via LibreOffice) and retry.
 
 <Callout type="warn" title="Images are batch-only">
   `list_images` / `listImages` is **not** accepted by the streaming entry points
-  — image extraction needs the whole document. Requesting a streaming
-  format/mode combination that isn't supported raises `NotImplementedError` in
-  Python. If you need image bytes, use `get_chunks(..., list_images=True)` (batch)
-  — see [Streaming](/docs/streaming).
+  — image extraction needs the whole document. If you need image bytes, use
+  `get_chunks(..., list_images=True)` (batch) — see
+  [Streaming](/docs/streaming).
 </Callout>

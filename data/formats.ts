@@ -1,28 +1,27 @@
 /**
  * Supported formats — extension list derived from the library source
- * (`py_chunks/chunkers/` + README "Supported Formats", v0.6.0).
+ * (`rs-chunks/src/dispatch.rs` + README "Supported Formats").
  *
- * HONESTY RULE (see NEEDS-REVIEW.md): `stable` = covered by the published PyPI
- * wheel's own per-format documentation. `new` = supported by the engine but not
- * yet written up there in detail.
+ * Every extension listed here dispatches in `rs-chunks/src/dispatch.rs`, chunks
+ * a real fixture, and ships in all three SDKs — there is no partial tier. The
+ * list is therefore flat: an extension is here or it is not supported.
  *
- * Audited 2026-08-06 (TECH_DEBT B2). All 36 extensions listed here dispatch in
- * `rs-chunks/src/dispatch.rs` and chunk a real fixture — the site does not claim
- * a format works that does not. The split is therefore an *under*-claim, which
- * is the safe direction, and it is left in place deliberately: confirming what
- * the published v0.6.0 wheel does would take installing it from PyPI, and a
- * local `maturin develop` build is not evidence about a published artifact.
- * Promoting the remaining 24 to `stable` is a release decision, not a code one.
+ * There used to be a per-format `status` field (`stable` / `new` / `soon`).
+ * It never meant "support level" — it recorded whether the *published wheel's*
+ * per-format documentation covered that extension in detail, an under-claim
+ * kept while the docs caught up. As of 0.6.2 all 36 formats are documented and
+ * the docs' supported-formats page has dropped its Availability column, so the
+ * field distinguished nothing and every chip rendered the same badge. It was
+ * removed rather than set to a constant, so it cannot drift back into looking
+ * like a support-level claim. If a genuine availability split ever returns
+ * (a format behind a feature flag, say), add a field that says exactly that.
  *
- * The `soon` status below is unused by every entry — no format on this site is
- * marked "Coming soon" — and is kept only because the type is exported.
+ * Audited 2026-08-08.
  */
-export type FormatStatus = "stable" | "new" | "soon";
-
 export interface FormatFamily {
   family: string;
   blurb: string;
-  formats: { ext: string; status: FormatStatus }[];
+  formats: { ext: string }[];
 }
 
 export const formatFamilies: FormatFamily[] = [
@@ -30,89 +29,79 @@ export const formatFamilies: FormatFamily[] = [
     family: "Word",
     blurb: "OOXML + legacy binary Word",
     formats: [
-      { ext: ".docx", status: "stable" },
-      { ext: ".doc", status: "stable" },
-      { ext: ".docm", status: "new" },
-      { ext: ".dotx", status: "new" },
-      { ext: ".dotm", status: "new" },
+      { ext: ".docx" },
+      { ext: ".doc" },
+      { ext: ".docm" },
+      { ext: ".dotx" },
+      { ext: ".dotm" },
     ],
   },
   {
     family: "PowerPoint",
     blurb: "OOXML + legacy binary PowerPoint",
     formats: [
-      { ext: ".pptx", status: "stable" },
-      { ext: ".ppt", status: "stable" },
-      { ext: ".potx", status: "new" },
-      { ext: ".potm", status: "new" },
-      { ext: ".ppsx", status: "new" },
-      { ext: ".ppsm", status: "new" },
+      { ext: ".pptx" },
+      { ext: ".ppt" },
+      { ext: ".potx" },
+      { ext: ".potm" },
+      { ext: ".ppsx" },
+      { ext: ".ppsm" },
     ],
   },
   {
     family: "Spreadsheets",
     blurb: "Excel + OpenDocument sheets",
     formats: [
-      { ext: ".xlsx", status: "stable" },
-      { ext: ".xls", status: "stable" },
-      { ext: ".xlsm", status: "new" },
-      { ext: ".xlsb", status: "new" },
-      { ext: ".xltx", status: "new" },
-      { ext: ".xltm", status: "new" },
-      { ext: ".ods", status: "new" },
+      { ext: ".xlsx" },
+      { ext: ".xls" },
+      { ext: ".xlsm" },
+      { ext: ".xlsb" },
+      { ext: ".xltx" },
+      { ext: ".xltm" },
+      { ext: ".ods" },
     ],
   },
   {
     family: "PDF",
     blurb: "Text + page-scoped images",
-    formats: [{ ext: ".pdf", status: "stable" }],
+    formats: [{ ext: ".pdf" }],
   },
   {
     family: "Web & Markup",
     blurb: "Markup and rich text",
     formats: [
-      { ext: ".html", status: "stable" },
-      { ext: ".htm", status: "stable" },
-      { ext: ".md", status: "stable" },
-      { ext: ".rtf", status: "new" },
+      { ext: ".html" },
+      { ext: ".htm" },
+      { ext: ".md" },
+      { ext: ".rtf" },
     ],
   },
   {
     family: "OpenDocument",
     blurb: "LibreOffice / OpenOffice documents",
-    formats: [
-      { ext: ".odt", status: "new" },
-      { ext: ".odp", status: "new" },
-    ],
+    formats: [{ ext: ".odt" }, { ext: ".odp" }],
   },
   {
     family: "Plain & Data",
     blurb: "Text and structured data",
     formats: [
-      { ext: ".txt", status: "stable" },
-      { ext: ".csv", status: "stable" },
-      { ext: ".tsv", status: "new" },
-      { ext: ".json", status: "new" },
-      { ext: ".jsonl", status: "new" },
-      { ext: ".ndjson", status: "new" },
+      { ext: ".txt" },
+      { ext: ".csv" },
+      { ext: ".tsv" },
+      { ext: ".json" },
+      { ext: ".jsonl" },
+      { ext: ".ndjson" },
     ],
   },
   {
     family: "Email",
     blurb: "Outlook + MIME email",
-    formats: [
-      { ext: ".msg", status: "new" },
-      { ext: ".eml", status: "new" },
-      { ext: ".mbox", status: "new" },
-    ],
+    formats: [{ ext: ".msg" }, { ext: ".eml" }, { ext: ".mbox" }],
   },
   {
     family: "eBooks & Notebooks",
     blurb: "EPUB and Jupyter",
-    formats: [
-      { ext: ".epub", status: "new" },
-      { ext: ".ipynb", status: "new" },
-    ],
+    formats: [{ ext: ".epub" }, { ext: ".ipynb" }],
   },
 ];
 

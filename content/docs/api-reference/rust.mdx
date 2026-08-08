@@ -1,0 +1,293 @@
+---
+title: Rust — rs-chunks
+description: The crate's public surface — six dispatch functions, four types, and the per-format facade that exposes everything the dispatch layer cannot.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+```bash
+cargo add rs-chunks
+```
+
+The crate is **`rs-chunks`** on crates.io (the name `chunks-rs` was taken) and
+its library name is **`chunks_rs`** — so `use chunks_rs::…` is what you write.
+It is the engine itself: py-chunks and js-chunks are bindings over this code.
+
+## Crate root
+
+```rust
+pub use chunk::Chunk;
+pub use dispatch::{
+    get_chunks, get_chunks_from_bytes, get_chunks_with_images_from_bytes, get_markdown,
+    get_markdown_from_bytes, get_markdown_with_images_from_bytes,
+};
+pub use error::{ChunkError, Result};
+pub use options::{ChunkMode, ChunkOptions};
+```
+
+Plus the public modules `chunk`, `dispatch`, `error`, `formats`, `options`.
+
+## The six dispatch functions
+
+Every one of them routes on the file extension and runs the parse behind a
+panic boundary — a panic anywhere in the engine or a third-party parser comes
+back as `Err(ChunkError::Parse(..))` rather than unwinding into your code.
+
+```rust
+pub fn get_chunks(
+    file_path: &str,
+    mode: &str,
+    window_size: usize,
+    overlap: usize,
+    sentences_per_chunk: usize,
+    paragraphs_per_page: usize,
+) -> Result<Vec<Chunk>>;
+
+pub fn get_chunks_from_bytes(
+    data: &[u8],
+    filename: &str,
+    mode: &str,
+    window_size: usize,
+    overlap: usize,
+    sentences_per_chunk: usize,
+    paragraphs_per_page: usize,
+) -> Result<Vec<Chunk>>;
+
+pub fn get_chunks_with_images_from_bytes(
+    data: &[u8],
+    filename: &str,
+    mode: &str,
+    window_size: usize,
+    overlap: usize,
+    sentences_per_chunk: usize,
+    paragraphs_per_page: usize,
+) -> Result<(Vec<Chunk>, Vec<(String, Vec<u8>)>)>;
+
+pub fn get_markdown(file_path: &str) -> Result<String>;
+
+pub fn get_markdown_from_bytes(data: &[u8], filename: &str) -> Result<String>;
+
+pub fn get_markdown_with_images_from_bytes(
+    data: &[u8],
+    filename: &str,
+) -> Result<(String, Vec<(String, Vec<u8>)>)>;
+```
+
+The arguments are positional and deliberately mirror the Python entry point
+one-for-one; the Python defaults are `("default", 3, 1, 3, 15)`. `filename` is
+used only to pick a chunker — the bytes are never written to disk under that
+name.
+
+Images come back as `Vec<(String, Vec<u8>)>` — name and bytes, deduplicated by
+name with the first occurrence winning. Formats with no embedded-image support
+return an empty vector rather than an error.
+
+<Callout type="info" title="Two things the dispatch layer does not do">
+  **Images from a path** and **streaming** are not on this surface. Both are
+  per-format: `formats::docx::chunk_with_images("report.docx", …)` and
+  `formats::pdf::stream("report.pdf", …)`. There is no
+  `get_chunks_with_images` (path) and no `dispatch::stream`.
+</Callout>
+
+## Types
+
+### Chunk
+
+```rust
+pub struct Chunk {
+    pub content: String,
+    pub content_type: String,
+    pub metadata: serde_json::Value,
+}
+
+impl Chunk {
+    pub fn new(
+        content: impl Into<String>,
+        content_type: impl Into<String>,
+        metadata: serde_json::Value,
+    ) -> Self;
+}
+```
+
+`Chunk` derives `Debug, Clone, PartialEq, Serialize, Deserialize`, and
+serialises to the same `{content, content_type, metadata}` JSON the other two
+SDKs return. `content_type` is a plain `String`, not an enum — the vocabulary
+is format- and mode-specific and each format keeps its own private
+classification internally. `metadata` is always a JSON object, never `null`.
+
+### ChunkError and Result
+
+```rust
+#[non_exhaustive]
+pub enum ChunkError {
+    Unsupported(String),
+    InvalidArg(String),
+    Parse(String),
+    Io(std::io::Error),
+}
+
+pub type Result<T> = std::result::Result<T, ChunkError>;
+```
+
+`ChunkError` implements `Display`, `std::error::Error` (with `source()`
+returning the inner `io::Error` for the `Io` variant), `From<std::io::Error>`
+and `From<String>` (lifting an internal parse-side string into
+`ChunkError::Parse`).
+
+<Callout type="warn" title="#[non_exhaustive] — since 0.6.1">
+  A `match` on `ChunkError` in a downstream crate **must** carry a wildcard
+  arm. This lets the engine add variants without a semver-major bump, and it is
+  a breaking change for any 0.6.0 code that matched exhaustively.
+
+  ```rust
+  match err {
+      ChunkError::Unsupported(m) => /* 415 */,
+      ChunkError::InvalidArg(m)  => /* 400 */,
+      ChunkError::Parse(m)       => /* 422 */,
+      ChunkError::Io(e)          => /* 500 */,
+      _                          => /* 500 */,
+  }
+  ```
+</Callout>
+
+`Display` prefixes the variant: `"unsupported: …"`, `"invalid argument: …"`,
+`"parse error: …"`, `"io error: …"`. The bindings deliberately do **not** use
+`Display` — they surface the bare inner message so the text of engine-raised
+errors is byte-identical across the three SDKs, and carry the variant
+separately (a Python exception type, a JavaScript `kind`). Checks a binding
+performs in its own host layer before calling the engine — py-chunks'
+unsupported-extension and invalid-mode messages — are worded per binding. See
+[Error Handling](/docs/error-handling).
+
+### ChunkMode
+
+```rust
+pub enum ChunkMode {
+    Default, Section, Semantic, Sentence, SlidingWindow, PageAware, Structural,
+    Row, Table, Sheet,
+}
+```
+
+`Copy + Clone + PartialEq + Eq + Debug`, `Default` is `ChunkMode::Default`.
+`as_str()` gives the wire string; `FromStr` parses one and returns
+`Err(ChunkError::InvalidArg(..))` for an unknown value, and the inherent
+`ChunkMode::from_str` is an `Option`-returning convenience kept for existing
+callers.
+
+### ChunkOptions
+
+```rust
+pub struct ChunkOptions {
+    pub mode: ChunkMode,
+    pub window_size: usize,
+    pub overlap: usize,
+    pub sentences_per_chunk: usize,
+    pub paragraphs_per_page: usize,
+    // Delimited / spreadsheet knobs
+    pub rows_per_chunk: usize,
+    pub include_headers: bool,
+    pub delimiter: Option<u8>,
+    pub encoding: String,
+    pub skip_empty_rows: bool,
+}
+```
+
+`Default` gives `mode: Default, window_size: 3, overlap: 1,
+sentences_per_chunk: 3, paragraphs_per_page: 15, rows_per_chunk: 10,
+include_headers: true, delimiter: None, encoding: "utf-8",
+skip_empty_rows: true`. Builders: `ChunkOptions::new(mode)` and
+`.with_window(window_size, overlap)`.
+
+<Callout type="info" title="ChunkOptions is the only uniform route to the delimited knobs">
+  `rows_per_chunk`, `include_headers`, `delimiter`, `encoding` and
+  `skip_empty_rows` are not on any dispatch function's argument list. Every
+  format module exposes
+  `chunk_with_options(file_path: &str, opts: &ChunkOptions) -> Result<Vec<Chunk>>`,
+  and that is the one call shape that carries all of them.
+
+  ```rust
+  use chunks_rs::{formats::csv, ChunkMode, ChunkOptions};
+
+  let opts = ChunkOptions {
+      mode: ChunkMode::Row,
+      rows_per_chunk: 25,
+      include_headers: true,
+      delimiter: Some(b';'),
+      encoding: "windows-1252".to_string(),
+      skip_empty_rows: false,
+      ..Default::default()
+  };
+  let chunks = csv::chunk_with_options("export.csv", &opts)?;
+  ```
+
+  A format rejects modes it does not implement — `csv::chunk_with_options` with
+  `ChunkMode::Semantic` returns
+  `Err(ChunkError::InvalidArg("CSV does not support mode 'semantic'"))`.
+</Callout>
+
+## The per-format facade
+
+`chunks_rs::formats` has one public module per format: `csv`, `doc`, `docx`,
+`eml`, `epub`, `html`, `ipynb`, `json`, `md`, `msg`, `odf`, `pdf`, `ppt`,
+`pptx`, `rtf`, `txt`, `xlsx` — 17 modules covering all 36 extensions.
+
+| Entry point | On | Shape |
+| --- | --- | --- |
+| `chunk` | all 17 | path + positional args → `Result<Vec<Chunk>>` |
+| `chunk_from_bytes` | all 17 | bytes (+ filename where the format needs it) → `Result<Vec<Chunk>>` |
+| `chunk_with_options` | all 17 | `(&str, &ChunkOptions)` → `Result<Vec<Chunk>>` |
+| `stream` | all 17 | path → `Result<impl Iterator<Item = Result<Chunk>>>` |
+| `to_markdown`, `to_markdown_from_bytes` | all 17 | → `Result<String>` |
+| `chunk_with_images`, `chunk_with_images_from_bytes` | 12 | → `Result<(Vec<Chunk>, Vec<(String, Vec<u8>)>)>` |
+| `to_markdown_with_images`, `to_markdown_with_images_from_bytes` | 12 | → `Result<(String, Vec<(String, Vec<u8>)>)>` |
+| `stream_from_bytes` | `pdf`, `xlsx` only | bytes → streaming iterator |
+
+The 12 with image support are `doc`, `docx`, `eml`, `epub`, `html`, `ipynb`,
+`msg`, `odf`, `pdf`, `ppt`, `pptx`, `xlsx`. The five without are `csv`, `json`,
+`md`, `rtf`, `txt` — formats with no embedded binary parts.
+
+The delimited and spreadsheet modules take extra positional arguments, which is
+why `chunk_with_options` exists:
+
+```rust
+use chunks_rs::formats::{csv, pptx};
+
+// csv::chunk(path, mode, rows_per_chunk, window_size, overlap,
+//            include_headers, delimiter, encoding, skip_empty_rows)
+let chunks = csv::chunk("data.csv", "row", 10, 5, 1, true, None, "utf-8", true)?;
+
+for c in csv::stream("data.csv", "row", 10, 5, 1, true, None, "utf-8", true)? {
+    let c = c?;
+}
+
+// (chunks, images) — images are (name, bytes) pairs
+let (chunks, images) = pptx::chunk_with_images("deck.pptx", "default", 3, 1, 3, 15)?;
+```
+
+`formats::pdf` additionally exposes `chunk_pdf_markdown` and
+`chunk_pdf_markdown_with_images` for callers who parsed a PDF with some other
+tool, with the Markdown normaliser at
+`formats::pdf::author_block::normalize`. These are the same three operations
+js-chunks exports as `chunkPdfMarkdown`, `chunkPdfMarkdownWithImages` and
+`normalizePdfMarkdown`.
+
+## Cargo features
+
+```toml
+[features]
+default = ["pdf-native"]
+pdf-native = ["dep:liteparse", "dep:tokio"]
+```
+
+PDF *parsing* is pure Rust, always compiled in, and builds for `wasm32`.
+`pdf-native` adds only page **rasterisation** via PDFium — the fallback used
+when a scanned PDF has no extractable text and no embedded page image. For a
+`wasm32` target, build with `default-features = false`; a text-less PDF then
+reports that it has no text instead of returning page renders. That is exactly
+what js-chunks does.
+
+## Related
+
+- [Framework Integration — Rust](/docs/framework-integration/rust) — Axum, Actix Web, Rocket, Warp.
+- [Streaming](/docs/streaming) — which formats stream incrementally and which drain.
+- [Architecture](/docs/architecture) — how the dispatch layer, the facade and the bindings fit together.

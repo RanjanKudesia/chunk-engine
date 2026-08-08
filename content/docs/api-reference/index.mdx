@@ -1,0 +1,104 @@
+---
+title: API Reference
+description: The operations every SDK exposes, the parameters they share, and where to find each language's exact signatures.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Callout } from "fumadocs-ui/components/callout";
+
+All three SDKs are bindings over one engine, so they expose the same
+operations — batch chunking, streaming, Markdown conversion and image
+extraction — over the same 36 extensions. Only the naming and the argument
+style follow each language's conventions.
+
+This page is the shared half: the operation map and the parameters that mean
+the same thing everywhere. The exact signature of every function lives on the
+per-language page.
+
+## Operations
+
+| Operation | Python (`py-chunks`) | JavaScript (`js-chunks`) | Rust (`rs-chunks`) |
+| --- | --- | --- | --- |
+| Chunk a document | `get_chunks(source, …)` | `getChunks(source, opts?)` | `get_chunks(path, …)`, `get_chunks_from_bytes(bytes, filename, …)` |
+| Chunk + extracted images | `get_chunks(…, list_images=True)` → `ChunksResult` | `getChunks(…, { listImages: true })` → `ChunksWithImages` | `get_chunks_with_images_from_bytes(…)` (bytes only) |
+| Convert to Markdown | `get_markdown(source)` | `getMarkdown(source)` | `get_markdown(path)`, `get_markdown_from_bytes(bytes, filename)` |
+| Markdown + images | `get_markdown(…, list_images=True)` → `MarkdownResult` | `getMarkdown(…, { listImages: true })` → `MarkdownWithImages` | `get_markdown_with_images_from_bytes(…)` (bytes only) |
+| Iterate chunks | `stream_chunks(source, …)` | `streamChunks(source, opts?)` | `formats::<fmt>::stream(path, …)` — per format |
+| One known format | `chunk_docx(path, …)` and 17 more pairs | — (route by `filename`) | `formats::docx::chunk(…)`, `chunk_with_options(…)` |
+| Host-parsed PDF Markdown | — | `chunkPdfMarkdown`, `chunkPdfMarkdownWithImages`, `normalizePdfMarkdown` | — |
+
+Two asymmetries are real and deliberate, not gaps in this table:
+
+- **Rust has no path-based image entry point at the dispatch level.** The
+  crate re-exports six functions; the two `*_with_images_*` ones take bytes.
+  For images from a path, call the format module —
+  `formats::docx::chunk_with_images("report.docx", …)`.
+- **Rust has no dispatch-level streaming.** Streaming is per-format
+  (`formats::csv::stream`, `formats::pdf::stream`, …) because the iterator
+  types differ per format. See [Streaming](/docs/streaming).
+
+## Shared parameters
+
+Every batch entry point in every language takes the same five chunking
+parameters with the same defaults. They are declared once here; the
+per-language pages show where each sits in the signature.
+
+| Parameter | Default | Applies to | Meaning |
+| --- | --- | --- | --- |
+| `mode` / `mode` | `"default"` | all | Chunking strategy — see [Chunking Modes](/docs/chunking-modes). |
+| `window_size` / `windowSize` | `3` | `sliding_window` | Units per window. The unit is format-specific (blocks, rows, paragraphs). |
+| `overlap` / `overlap` | `1` | `sliding_window` | Units shared between consecutive windows. Must be `< window_size`. |
+| `sentences_per_chunk` / `sentencesPerChunk` | `3` | `sentence` | Sentences grouped into one chunk. |
+| `paragraphs_per_page` / `paragraphsPerPage` | `15` | `page_aware` | Units per synthesized page when the format has no real pages. |
+| `filename` / `filename` | — | byte sources | Routing only. Never written to disk under that name. |
+| `list_images` / `listImages` | `false` | image-bearing formats | Switches the return shape to the `…WithImages` variant. |
+
+`mode` accepts the same ten strings everywhere: `default`, `section`,
+`semantic`, `sentence`, `sliding_window`, `page_aware`, `structural`, `row`,
+`table`, `sheet`. Not every format accepts every mode — a format validates
+`mode` against the strategies it supports and rejects the rest.
+
+<Callout type="warn" title="The spreadsheet sentinel">
+  On the source-agnostic entry points, `sentences_per_chunk` does double duty
+  for delimited and spreadsheet formats: it carries `rows_per_chunk`. For
+  spreadsheets the value `3` — the *default* — is read as "the caller did not
+  ask" and mapped to `rows_per_chunk = 1`, which means a deliberate 3 is not
+  expressible through `get_chunks`. To set rows explicitly, call the format
+  entry point: `chunk_xlsx(path, rows_per_chunk=3)` in Python, or
+  `formats::xlsx::chunk` / `chunk_with_options` in Rust. CSV and TSV have no
+  sentinel — `sentences_per_chunk` is passed through as `rows_per_chunk`
+  verbatim (clamped to a minimum of 1), except in `page_aware`, where
+  `paragraphs_per_page` supplies the row count instead.
+</Callout>
+
+## Knobs that are not on the shared surface
+
+`rows_per_chunk`, `include_headers`, `delimiter`, `encoding`,
+`skip_empty_rows`, `sheet_names`, `serialize_as` and `max_chunk_chars` are
+delimited/spreadsheet options. They are reachable as follows:
+
+| Knob | Python | JavaScript | Rust |
+| --- | --- | --- | --- |
+| `delimiter`, `encoding` | on every source-agnostic entry point, and on `chunk_csv` | not exposed | `formats::csv::chunk`, or `ChunkOptions` |
+| `rows_per_chunk`, `include_headers`, `skip_empty_rows` | `chunk_csv` / `chunk_xlsx` | not exposed | `formats::csv::chunk`, `formats::xlsx::chunk`, or `ChunkOptions` |
+| `sheet_names`, `serialize_as`, `max_chunk_chars` | `chunk_xlsx` | not exposed | `formats::xlsx::chunk` |
+
+In Rust, [`ChunkOptions`](/docs/api-reference/rust#chunkoptions) is the only
+route to `rows_per_chunk`, `include_headers`, `delimiter`, `encoding` and
+`skip_empty_rows` through a single uniform struct.
+
+## Per-language reference
+
+<Cards>
+  <Card title="Python — py-chunks" href="/docs/api-reference/python" description="All 52 exported names, the 13 source-agnostic functions, the 18 chunk_*/stream_chunk_* pairs, result types and exceptions." />
+  <Card title="JavaScript — js-chunks" href="/docs/api-reference/javascript" description="Every export, the ChunkMode union, source types, the /web subpath, and what ChunkError does and does not cover." />
+  <Card title="Rust — rs-chunks" href="/docs/api-reference/rust" description="The six dispatch re-exports, Chunk, ChunkError, ChunkMode, ChunkOptions, and the per-format facade." />
+</Cards>
+
+## Related
+
+- [Input Sources](/docs/input-sources) — what each SDK accepts as `source`.
+- [Output Schema](/docs/output-schema) — the shape of what comes back.
+- [Metadata Reference](/docs/metadata-reference) — every metadata key, per format and mode.
+- [Error Handling](/docs/error-handling) — what raises and how to catch it.
+- [Architecture](/docs/architecture) — why the three surfaces line up the way they do.

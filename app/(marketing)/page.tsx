@@ -51,7 +51,7 @@ export default function Home() {
       <Section
         eyebrow="Formats"
         title="36 formats, one engine"
-        description="Office, PDF, web, plain-text, data, email, eBooks, and notebooks — grouped by family, each with an honest availability badge."
+        description="Office, PDF, web, plain-text, data, email, eBooks, and notebooks — grouped by family. Every one of them ships in all three SDKs."
       >
         <FormatGrid />
       </Section>

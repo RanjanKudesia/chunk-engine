@@ -1,0 +1,294 @@
+---
+title: Python — py-chunks
+description: Every name py-chunks exports, with exact signatures, return types and the exceptions each raises.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+```bash
+pip install py-chunks
+```
+
+The package is `py-chunks` on PyPI and imports as `py_chunks`. It ships
+`py.typed` and a complete stub for the compiled module, so mypy and pyright see
+full annotations. `py_chunks.__version__` reads the installed distribution's
+metadata, so it cannot drift from what pip installed.
+
+## What the package exports
+
+`py_chunks.__all__` contains **52 names**, in four groups:
+
+| Group | Count | Names |
+| --- | --- | --- |
+| Package metadata | 1 | `__version__` |
+| Result types | 2 | `ChunksResult`, `MarkdownResult` |
+| Source-agnostic entry points | 13 | `get_chunks`, `get_markdown`, `stream_chunks`, and the `_from_path` / `_from_bytes` / `_from_fileobj` / `_from_upload` / `_from_s3_presigned_url` families |
+| Per-format chunkers | 36 | 18 `chunk_*` / `stream_chunk_*` pairs |
+
+## Source-agnostic entry points
+
+These are the 13 functions most callers use. All keyword arguments after `*`
+are keyword-only.
+
+### get_chunks
+
+```python
+def get_chunks(
+    source,
+    *,
+    filename: str | None = None,
+    mode: str = "default",
+    window_size: int = 3,
+    overlap: int = 1,
+    sentences_per_chunk: int = 3,
+    paragraphs_per_page: int = 15,
+    delimiter: str | None = None,
+    encoding: str = "utf-8",
+    list_images: bool = False,
+) -> list[dict] | ChunksResult
+```
+
+`source` may be a path (`str` or `os.PathLike`), an `http(s)` URL string,
+`bytes` / `bytearray` / `memoryview`, a file-like object with `.read()`, or a
+framework upload object with a `.filename` attribute. Returns `list[dict]`, or
+a `ChunksResult` when `list_images=True` (typed via `@overload`, so a checker
+narrows the return for a literal `True`/`False`).
+
+### get_markdown
+
+```python
+def get_markdown(
+    source,
+    *,
+    filename: str | None = None,
+    list_images: bool = False,
+) -> str | MarkdownResult
+```
+
+`get_markdown` takes no chunking parameters — it produces the document's
+Markdown, not chunks. Returns `str`, or a `MarkdownResult` when
+`list_images=True`.
+
+### stream_chunks
+
+```python
+def stream_chunks(
+    source,
+    *,
+    filename: str | None = None,
+    mode: str = "default",
+    window_size: int = 3,
+    overlap: int = 1,
+    sentences_per_chunk: int = 3,
+    paragraphs_per_page: int = 15,
+    delimiter: str | None = None,
+    encoding: str = "utf-8",
+)  # -> an iterator yielding chunk dicts
+```
+
+No `list_images` — streaming yields chunks only. See
+[Streaming](/docs/streaming) for which formats are genuinely incremental.
+
+### The explicit source helpers
+
+Ten more functions skip source detection. Each mirrors the corresponding
+`get_chunks` / `stream_chunks` signature above, differing only in the leading
+positional parameters:
+
+| Function | Leading parameters | Returns |
+| --- | --- | --- |
+| `get_chunks_from_path` | `file_path: str` | `list[dict] \| ChunksResult` |
+| `get_chunks_from_bytes` | `data: bytes, filename: str` | `list[dict] \| ChunksResult` |
+| `get_chunks_from_fileobj` | `file_obj, filename: str \| None = None` | `list[dict] \| ChunksResult` |
+| `get_chunks_from_upload` | `upload_file` | `list[dict] \| ChunksResult` |
+| `get_chunks_from_s3_presigned_url` | `url: str, filename: str \| None = None, timeout: int = 60` | `list[dict] \| ChunksResult` |
+| `stream_chunks_from_path` | `file_path: str` | `Iterator[dict]` |
+| `stream_chunks_from_bytes` | `data: bytes, filename: str` | `Iterator[dict]` |
+| `stream_chunks_from_fileobj` | `file_obj, filename: str \| None = None` | `Iterator[dict]` |
+| `stream_chunks_from_upload` | `upload_file` | `Iterator[dict]` |
+| `stream_chunks_from_s3_presigned_url` | `url: str, filename: str \| None = None, timeout: int = 60` | `Iterator[dict]` |
+
+Every one of them then takes the same keyword-only block:
+`mode="default"`, `window_size=3`, `overlap=1`, `sentences_per_chunk=3`,
+`paragraphs_per_page=15`, `delimiter=None`, `encoding="utf-8"` — plus
+`list_images=False` on the `get_chunks_*` five.
+
+`get_chunks_from_path` takes `file_path` positionally and does not accept a
+`filename` override; the extension comes from the path.
+
+<Callout type="info" title="Bytes never touch the disk">
+  Since 0.6.1, `get_chunks_from_bytes` and the file-object / upload / URL paths
+  that funnel into it call the engine's no-filesystem API directly. The one
+  exception is `stream_chunks_from_bytes`, which still writes a temporary file
+  because the engine's streaming surface is path-based; the temp file is
+  deleted when the iterator is exhausted, closed, or garbage-collected.
+</Callout>
+
+## Per-format chunkers
+
+18 modules, each exporting a `chunk_*` / `stream_chunk_*` pair. They take a
+path (never bytes), skip source detection, and return a `(chunks, timing)`
+tuple where `timing` is `{"rust_ms": float, "python_ms": float}`. The streaming
+half returns an iterator of `dict`.
+
+| Pair | Extensions | Signature after `file_path` |
+| --- | --- | --- |
+| `chunk_csv` / `stream_chunk_csv` | `.csv` | `mode="row", rows_per_chunk=10, window_size=5, overlap=1, include_headers=True, delimiter=None, encoding="utf-8", skip_empty_rows=True` |
+| `chunk_tsv` / `stream_chunk_tsv` | `.tsv` | same as CSV, but `delimiter="\t"` |
+| `chunk_doc` / `stream_chunk_doc` | `.doc` | standard |
+| `chunk_docx` / `stream_chunk_docx` | `.docx`, `.docm`, `.dotx`, `.dotm` | standard |
+| `chunk_eml` / `stream_chunk_eml` | `.eml`, `.mbox` | standard |
+| `chunk_epub` / `stream_chunk_epub` | `.epub` | standard |
+| `chunk_html` / `stream_chunk_html` | `.html`, `.htm` | standard |
+| `chunk_ipynb` / `stream_chunk_ipynb` | `.ipynb` | standard |
+| `chunk_json` / `stream_chunk_json` | `.json`, `.jsonl`, `.ndjson` | standard |
+| `chunk_md` / `stream_chunk_md` | `.md` | standard |
+| `chunk_msg` / `stream_chunk_msg` | `.msg` | standard |
+| `chunk_odf` / `stream_chunk_odf` | `.odt`, `.odp` | standard |
+| `chunk_pdf` / `stream_chunk_pdf` | `.pdf` | standard |
+| `chunk_ppt` / `stream_chunk_ppt` | `.ppt` | standard |
+| `chunk_pptx` / `stream_chunk_pptx` | `.pptx`, `.potx`, `.potm`, `.ppsx`, `.ppsm` | standard, but `paragraphs_per_page=5` and an extra `slides_per_chunk: int \| None = None` |
+| `chunk_rtf` / `stream_chunk_rtf` | `.rtf` | standard |
+| `chunk_txt` / `stream_chunk_txt` | `.txt` | standard |
+| `chunk_xlsx` / `stream_chunk_xlsx` | `.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`, `.xltx`, `.xltm` | see below |
+
+**standard** means
+`mode="default", window_size=3, overlap=1, sentences_per_chunk=3, paragraphs_per_page=15`.
+
+There is no `chunk_xls`: `.xls` is one of the seven spreadsheet extensions
+routed through `chunk_xlsx`.
+
+### The delimited and spreadsheet signatures in full
+
+```python
+def chunk_csv(
+    file_path: str,
+    mode: str = "row",
+    rows_per_chunk: int = 10,
+    window_size: int = 5,
+    overlap: int = 1,
+    include_headers: bool = True,
+    delimiter: str | None = None,
+    encoding: str = "utf-8",
+    skip_empty_rows: bool = True,
+) -> tuple[list[dict], dict]
+
+def stream_chunk_csv(...)   # identical signature, returns an iterator
+```
+
+Modes accepted: `row`, `default`, `sliding_window`, `page_aware`. `delimiter`
+accepts only `None`, `","`, `"\t"`, `";"` or `"|"`.
+
+```python
+def chunk_xlsx(
+    file_path: str,
+    mode: str = "row",
+    rows_per_chunk: int = 1,
+    window_size: int = 3,
+    overlap: int = 1,
+    include_headers: bool = True,
+    sheet_names: list[str] | None = None,
+    skip_empty_rows: bool = True,
+    serialize_as: str = "key_value",
+    max_chunk_chars: int = 2000,
+) -> tuple[list[dict], dict]
+
+def stream_chunk_xlsx(
+    file_path: str,
+    mode: str = "row",
+    rows_per_chunk: int = 1,
+    window_size: int = 3,
+    overlap: int = 1,
+    include_headers: bool = True,
+    sheet_names: list[str] | None = None,
+    skip_empty_rows: bool = True,
+    max_chunk_chars: int = 2000,
+)
+```
+
+Modes accepted: `row`, `table`, `sheet`, `sliding_window`, `page_aware`,
+`semantic`. `serialize_as` currently accepts only `"key_value"`, and it exists
+on `chunk_xlsx` alone — the streaming half hard-codes it.
+
+<Callout type="warn" title="window_size defaults differ">
+  `window_size` defaults to **5** in `chunk_csv` / `stream_chunk_csv` (and in
+  the TSV wrappers, which inherit it) and to **3** in `chunk_xlsx` /
+  `stream_chunk_xlsx` and in all sixteen other pairs. The source-agnostic
+  `get_chunks` always uses 3. If you switch from `get_chunks` to `chunk_csv`
+  without passing `window_size`, `sliding_window` output changes.
+</Callout>
+
+## Result types
+
+Both are `dataclasses`, not tuples — access by attribute.
+
+```python
+@dataclass
+class ChunksResult:
+    chunks: list[dict]
+    images: dict[str, bytes] = field(default_factory=dict)
+
+@dataclass
+class MarkdownResult:
+    markdown: str
+    images: dict[str, bytes] = field(default_factory=dict)
+```
+
+`images` is a `dict` keyed by image name — the JavaScript SDK returns the same
+data as an **array** of `{ name, data }`. See
+[Output Schema](/docs/output-schema).
+
+## Exceptions
+
+py-chunks defines no exception classes of its own; every failure is a Python
+built-in. The table below covers the ones you will see in practice, but it is
+not a closed set — treat any `Exception` subclass as possible.
+
+| Exception | Raised when |
+| --- | --- |
+| `FileNotFoundError` | The path does not exist — checked in the Python layer before the engine is called. |
+| `ValueError` | Unsupported extension; unknown `mode`; an invalid parameter (`overlap >= window_size`, a zero count, an unsupported `delimiter`); empty `data`; a byte or file-object source with no resolvable `filename`. |
+| `TypeError` | `source` is a type the package does not accept; `.read()` returned something that is not `bytes`; an upload object whose `read()` is a coroutine. |
+| `NotImplementedError` | `Streaming not yet supported for {ext} files` — the extension has no streaming entry point. All 36 supported extensions have one, so this is currently unreachable. **A mis-typed `mode` no longer lands here**: the Word family used to report `Streaming for <mode> mode coming soon`, which was doubly misleading (all seven DOCX modes stream fine), and it now raises `ValueError` like every other format. |
+| `RuntimeError` | The engine failed to parse or decode the document. |
+| `OSError` | An I/O failure inside the engine. |
+| `OverflowError` | A **negative** count reached the Rust boundary before any Python-layer range check could reject it — `can't convert negative int to unsigned`. Seen on the formats whose validation lives in the engine: `.json`, `.jsonl`, `.ndjson`, `.eml`, `.mbox`, `.msg`, `.rtf`, `.ipynb`, `.odt`, `.odp`, `.epub`. The same negative value is a plain `ValueError` on `.md`, `.docx`, `.pdf` and friends. |
+
+`RuntimeError`, `OSError` and `OverflowError` come from the Rust boundary. The
+engine's error type has four variants, mapped as:
+
+| Engine variant | Python exception |
+| --- | --- |
+| `ChunkError::Unsupported` | `ValueError` |
+| `ChunkError::InvalidArg` | `ValueError` |
+| `ChunkError::Parse` | `RuntimeError` |
+| `ChunkError::Io` | `OSError` |
+| any future variant | `RuntimeError` |
+
+For **parse** errors the engine raises, the message text is the engine's own,
+unprefixed — which is what makes it byte-identical to the message js-chunks
+reports for the same input.
+
+Other checks run earlier, in py-chunks' own Python layer. Two of those messages
+are py-chunks-specific: the unsupported-extension message (which appends the
+full supported set) and the invalid-mode message (one uniform sorted-list
+template, where js-chunks reports the engine's per-format sentence).
+
+The **numeric-range** messages are not among them any more. The formats whose
+range checks live in Python (DOCX, DOC, PPT, PPTX and the spreadsheet family)
+now use the engine's own wording verbatim, so py-chunks and js-chunks both say
+`window_size must be greater than 0` — and so do the document and spreadsheet
+families as each other. Only where a format renames the parameter does the
+sentence change, and it changes identically in both SDKs (CSV/TSV report
+`rows_per_chunk must be greater than 0` for a zero `paragraphs_per_page`).
+
+The exception *type* matches js-chunks' `kind` in every case, so **branch on
+the exception type, not on the message** — that stays the right habit even now
+that the range wording agrees, because the two host-layer messages above still
+do not. See [Error Handling](/docs/error-handling).
+
+## Related
+
+- [Input Sources](/docs/input-sources) — every accepted `source` shape, with examples.
+- [Chunking Modes](/docs/chunking-modes) — what each `mode` produces.
+- [Output Schema](/docs/output-schema) — the `dict` a chunk actually is.

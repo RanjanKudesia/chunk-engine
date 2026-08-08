@@ -1,11 +1,15 @@
 ---
 title: Changelog
-description: Release history for py-chunks, reconstructed from git tags and commits.
+description: Release history for py-chunks, js-chunks and rs-chunks — one engine, three packages, one version number since 0.6.0.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Current versions: **py-chunks 0.6.1**, **js-chunks 0.6.1**, **rs-chunks 0.6.1**.
+Release history for all three packages. The newest entry at the top of this page
+is the newest release; for what a registry is serving right now, check
+[PyPI](https://pypi.org/project/py-chunks/),
+[npm](https://www.npmjs.com/package/js-chunks) or
+[crates.io](https://crates.io/crates/rs-chunks) — a publish can lag a release.
 
 <Callout type="info">
   **From 0.6.0 the three packages share one version number.** They are one engine
@@ -18,9 +22,125 @@ Current versions: **py-chunks 0.6.1**, **js-chunks 0.6.1**, **rs-chunks 0.6.1**.
   files from 0.6.1.
 </Callout>
 
+## 0.6.2
+
+*Released 2026-08-08.* Argument validation, error-contract completeness and a
+Python 3.9 that actually imports — no new formats or modes, and no change to
+the chunks any already-valid call returns.
+
+**py-chunks**
+
+- **Python 3.9 actually works.** `import py_chunks` raised
+  `TypeError: unsupported operand type(s) for |` on CPython 3.9: 41
+  runtime-evaluated PEP 604 unions in function signatures across `_sources.py`
+  and four chunker modules. `from __future__ import annotations` is now present
+  in every package module, so annotations are never evaluated at definition
+  time. The declared `requires-python = ">=3.9"` is a true statement again.
+- `py_chunks.__version__`, read from the installed distribution's metadata, so
+  it cannot drift from what pip installed. Exported through `__all__`.
+- A Python 3.9 wheel-test job gates publishing, alongside the existing 3.11
+  job — the 3.11 job proves the stable ABI spans versions, the 3.9 job proves
+  the Python sources contain no post-3.9 syntax.
+- **Three streaming helpers skipped argument validation.**
+  `stream_chunk_doc()` and `stream_chunk_ppt()` ran no mode or range check at
+  all, so a mis-typed `mode` silently streamed **default-mode** chunks instead
+  of raising; `stream_chunk_docx()` raised
+  `NotImplementedError: Streaming for <mode> mode coming soon`, which was
+  doubly wrong — nothing was unimplemented, all seven DOCX modes stream. All
+  three now run the same validators as their batch counterparts and raise
+  `ValueError` at the call, before the first item is produced.
+  **`stream_chunk_docx` no longer raises `NotImplementedError`**; if you caught
+  it, catch `ValueError`. The other 16 `stream_chunk_*` helpers were audited
+  and were already clean.
+- **Range messages now match the engine's wording.** `chunkers/doc.py`,
+  `chunkers/ppt.py` and `chunkers/docx.py` said `window_size must be > 0` (and
+  the same shape for `sentences_per_chunk` / `paragraphs_per_page`), while the
+  spreadsheet family said `window_size must be >= 1`. Everything now says the
+  engine's `must be greater than 0`, so the sentence is identical across
+  formats *and* across the three SDKs. The exception *type* is unchanged —
+  keep branching on that, not on the text.
+
+**js-chunks**
+
+- **`ChunkError` now covers the wrapper's own argument validation.** Three
+  host-side checks — a filesystem path used off Node, an unsupported `source`
+  type, and byte input with no filename — previously threw a plain `Error` or
+  `TypeError`. They now throw `ChunkError` with `kind: "invalid-arg"`. Message
+  text is unchanged, so only the thrown *type* differs; code that caught
+  `TypeError` for the unsupported-source case must catch `ChunkError` instead.
+- **A missing or unreadable path is now a `ChunkError` too.** `fs.readFileSync`
+  sat outside the wrapping, so `getChunks("./missing.md")` escaped as a raw Node
+  `Error` — the single most common failure fell outside a contract documented as
+  complete. It now throws `ChunkError` with `kind: "io"`, preserving Node's
+  message (`ENOENT: no such file or directory, open './missing.md'`). With this
+  and the three checks above, **every** JavaScript failure is a `ChunkError`.
+  Code that tested `e.code === "ENOENT"` on a non-`ChunkError` branch should
+  move to `e instanceof ChunkError && e.kind === "io"`.
+- **`overlap >= window_size` is now `invalid-arg` everywhere.** It was
+  `kind: "parse"` for the markdown-family formats and `"invalid-arg"` for
+  DOCX/PPTX/XLSX, because `md`/`txt`/`html` lifted their builder result straight
+  into `Parse` and `csv::chunk_from_bytes` skipped its range checks entirely. A
+  shared `validate_mode_args` now runs before dispatch, and the CSV checks were
+  added. The same applies to `window_size = 0`, `sentences_per_chunk = 0` and
+  `paragraphs_per_page = 0`. `kind` is now a reliable argument/parse split — see
+  [Error Handling](/docs/error-handling). With the EPUB and spreadsheet fixes
+  below, "everywhere" is now literally true.
+- **Four escapes from the `ChunkError` contract, all through `opts`.**
+  `getChunks(bytes, null)` and `getMarkdown(bytes, null)` threw a raw
+  `TypeError`; a **throwing getter** on `opts` propagated as whatever it threw,
+  and `streamChunks` hit it too via `{ ...opts }` even though it reads no key
+  itself; and a `Blob` whose `arrayBuffer()` rejects escaped as its own
+  rejection. A single `snapshotOpts` now runs at all five entry points — so a
+  getter fires at most once, and never mid-parse — and the `Blob` read is
+  wrapped, reporting `kind: "io"`, the same kind the path branch reports for
+  the same condition. `null` is accepted as "no options".
+- **Numeric options are validated, not coerced.** The wasm boundary takes
+  `usize`, so `windowSize: -1` used to return chunks, `2.5` truncated to 2 and
+  `"3"` coerced to 3; a non-string `filename` or `mode` surfaced as
+  `kind: "unknown"` with the message `memory access out of bounds`. All of
+  these are now `kind: "invalid-arg"` with an actionable message. Out-of-range
+  values reuse the engine's snake_case sentence
+  (`window_size must be greater than 0`); type mistakes name the camelCase key
+  you typed. **Zero is deliberately still handled by the engine**, so its
+  message names the parameter the target format really uses —
+  `paragraphsPerPage: 0` on a CSV reports `rows_per_chunk must be greater than 0`.
+  `overlap: 0` remains legal.
+- **XML entity references in OOXML relationship targets are now decoded.**
+  Hyperlink URLs in `get_markdown` output carried literal `&amp;` because
+  relationship attributes were read without entity folding. Markdown output only;
+  chunk content was never affected.
+- `streamChunks` is documented honestly in the README as an ergonomic wrapper,
+  not incremental streaming. No API change; the TSDoc already said so.
+
+**rs-chunks** — and therefore all three SDKs
+
+- **EPUB now validates its mode arguments.** EPUB does not route through the
+  markdown pipeline, so it never reached the shared `validate_mode_args`, and a
+  bad argument produced an **empty chunk list** instead of an error —
+  `get_chunks("book.epub", mode="sliding_window", window_size=100, overlap=100)`
+  returned `[]`. This was true in **all three** SDKs: py-chunks checked the
+  `mode` string in its own layer and nothing else, so the numeric arguments
+  were unvalidated there too. A new `epub::validate_args` now runs at all four
+  entry points, after the extension check and before the book is loaded, so the
+  bytes route rejects without parsing. Valid calls are unchanged (Moby Dick
+  still yields 1,440 chunks at the defaults). **If you relied on an empty array
+  for bad EPUB arguments, you now get `ValueError` / `ChunkError` /
+  `ChunkError::InvalidArg`.**
+- **The spreadsheet family rejects `paragraphs_per_page = 0` in `page_aware`.**
+  XLSX/ODS/XLSB/XLSM paginate by whole-sheet regions and never read the value,
+  so zero was silently accepted while every other format rejected it. The check
+  is **scoped to `page_aware`** — the only mode that reads the parameter —
+  because an unconditional check would reject a value that no other format
+  rejects outside its mode.
+- **One sentence for a range rejection.** The five spreadsheet sites that said
+  `window_size must be >= 1` now say the engine's `must be greater than 0`,
+  matching the document formats and the Python layer. No exception type or
+  `kind` changed.
+
 ## 0.6.1
 
-Packaging, typing and error ergonomics — no new formats or modes.
+*Released 2026-08-08.* Packaging, typing, error ergonomics and semver
+hardening — no new formats or modes.
 
 **js-chunks**
 
@@ -53,8 +173,28 @@ Packaging, typing and error ergonomics — no new formats or modes.
 - The GIL is released while the engine parses and chunks, so a long parse no
   longer blocks other Python threads.
 
+**rs-chunks**
+
+- **`ChunkError` is now `#[non_exhaustive]`.** A `match` on it in a downstream
+  crate must carry a wildcard arm; this lets the engine add variants without a
+  semver-major bump, and it is a **breaking change for 0.6.0 code that matched
+  exhaustively**. See the [Rust API reference](/docs/api-reference/rust#chunkerror-and-result).
+- **Every dispatch entry point is panic-guarded.** All six public functions run
+  the parse behind `catch_unwind`, so a panic in the engine or in a third-party
+  parser returns `ChunkError::Parse("internal parser panic: …")` instead of
+  unwinding into the caller. An adversarial-input test suite came with it.
+- `ChunkMode` implements `FromStr`; the inherent `from_str` stays as an
+  `Option`-returning convenience.
+- The temp-file fallback for unsupported bytes was removed — the bytes API is
+  now genuinely filesystem-free.
+- Internal only: the docx and pptx monoliths were split into 24 focused
+  submodules, and `.doc` opens its CFB container once over borrowed bytes
+  instead of three times over full copies. Behaviour-identical — golden
+  snapshot 0 changed, parity 3,222/0.
+
 ## 0.6.0
 
+*Released 2026-08-07.*
 The largest correctness release so far: **64 engine changes** closing every
 defect in the tracker. Chunk *content* changes for most formats, almost always
 because more text is now extracted or because it is laid out correctly.
@@ -83,6 +223,18 @@ because more text is now extracted or because it is laid out correctly.
 
 **PDF** — the parser is now this project's own (`lopdf` object model, our layout
 engine, WebAssembly-clean) rather than a third-party pipeline.
+
+<Callout type="info" title="Where liteparse ended up">
+  0.5.0 routed PDF through the third-party `liteparse` engine, and js-chunks
+  carried an `@llamaindex/liteparse-wasm` peer dependency to do the same in the
+  browser. Both are gone. `liteparse` survives in `rs-chunks` as an **optional**
+  dependency behind the `pdf-native` Cargo feature, used for one thing only:
+  rasterising a page with PDFium when a scanned PDF has neither extractable text
+  nor an embedded page image. The feature is on by default for native builds and
+  compiled out of the WASM build, which is the one deliberate capability
+  difference between js-chunks and the other two SDKs. Every SDK, including
+  js-chunks, parses PDF text with the engine's own parser.
+</Callout>
 
 - Standard-14 font metrics shipped: fonts that declare no `/Widths` no longer
   advance every glyph half an em, which had interleaved adjacent text runs
@@ -136,9 +288,12 @@ mode.
 
 ## 0.5.0
 
-- **Seven new formats**, a **PDF liteparse rewrite** (PDF now runs through the
-  `liteparse` engine, which vendors its own PDFium), and **image extraction for
-  spreadsheets and HTML**.
+*Released 2026-07-28.*
+
+- **Seven new formats**, a **PDF liteparse rewrite** (PDF ran through the
+  third-party `liteparse` engine, which vendors its own PDFium — replaced in
+  0.6.0 by the engine's own parser), and **image extraction for spreadsheets
+  and HTML**.
 
 ## 0.4.7
 

@@ -1,45 +1,90 @@
 ---
 title: Installation
-description: Install chunk-engine for Python (pip), JavaScript (npm), or Rust (cargo).
+description: Install chunk-engine for Python (pip), JavaScript (npm), or Rust (cargo) — requirements, wheels, pinning, and the failure modes worth knowing.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Pick your language — the install command follows the switcher at the top of the
-page.
+One engine, three packages. Pick your language and the rest of this page follows
+it.
+
+<LangSelect />
 
 <InstallTabs />
 
-## Python — py-chunks
+## Requirements
 
-- **Python 3.9+**. The Rust engine ships compiled inside the wheel, built
-  against CPython's stable ABI — one binary wheel per platform covers every
-  supported Python, so there is no source build and no Rust toolchain needed.
+| | Python | JavaScript | Rust |
+| --- | --- | --- | --- |
+| Package | `py-chunks` (PyPI) | `js-chunks` (npm) | `rs-chunks` (crates.io) |
+| Import name | `py_chunks` | `js-chunks` | `chunks_rs` |
+| Minimum runtime | CPython 3.9 | Node 18 (`engines`) | Rust 2021 edition |
+| Delivery | prebuilt `cp39-abi3` wheel | WASM, loaded on first call | source crate |
+| Runtime dependencies | none | none | see `Cargo.toml` |
+| Toolchain needed | none on a wheel platform | none | cargo |
+| Types | `py.typed` + stubs | TypeScript declarations | native |
+
+## Platform details
+
+<LangOnly id="py">
+
+**Wheel platforms.** The Rust engine is compiled into the wheel against
+CPython's stable ABI (`abi3-py39`), so **one wheel per platform covers CPython 3.9 through 3.13+** —
+there is no per-version wheel matrix and no source build.
+
+| Platform | Wheel tag | Built |
+| --- | --- | --- |
+| Linux x86_64 (glibc ≥ 2.28) | `manylinux_2_28_x86_64` | yes |
+| Linux aarch64 (glibc ≥ 2.28) | `manylinux_2_28_aarch64` | yes |
+| macOS Apple Silicon | `macosx_*_arm64` | yes |
+| macOS Intel | `macosx_*_x86_64` | yes |
+| Windows x86_64 | `win_amd64` | yes |
+| Anything else (musl/Alpine, Windows ARM64, BSD) | — | source build from the sdist |
+
+An sdist is published too, so unlisted platforms still install — they just
+compile the Rust engine, which needs a Rust toolchain. `pip` must be new enough
+to understand PEP 600 tags (**pip 20.3+**) or it will ignore the manylinux
+wheels and reach for the sdist unnecessarily.
+
 - **No runtime dependencies.** PDF *parsing* is pure Rust inside the wheel, and
   PDFium — needed only to rasterise a scanned PDF's pages when it carries no
-  embedded page image of its own — is vendored into the same wheel. `pip install
-  py-chunks` pulls nothing else.
-- **Typed.** The package ships a `py.typed` marker and stubs covering the whole
-  compiled surface, so mypy and pyright see full annotations.
+  embedded page image of its own — is vendored into the same wheel.
+  `pip install py-chunks` pulls nothing else.
+- **Typed.** The package ships a `py.typed` marker and stubs for the compiled
+  module, so mypy and pyright see full annotations.
 
-```bash
-pip install py-chunks
-```
+</LangOnly>
 
-## JavaScript — js-chunks
+<LangOnly id="js">
 
-- **Node 18+**, Bun, Deno, and browsers. The engine is compiled to **WASM** and
-  instantiated lazily on first call.
-- Filesystem-path sources are Node/Bun only — elsewhere pass bytes with a
-  `filename`.
-- **ESM-only.** `require("js-chunks")` works on Node ≥ 20.19 (which can
-  `require()` ESM); on older Node use `import` or dynamic `import()`.
+**Runtimes.** Which WASM build loads, and whether string paths work:
 
-```bash
-npm install js-chunks
-```
+| Runtime | WASM build | Filesystem paths |
+| --- | --- | --- |
+| Node 18+ | `pkg-node` (synchronous) | yes |
+| Bun | `pkg-node` (synchronous) | yes |
+| Deno | `pkg-web` | **no** — pass bytes with `opts.filename` |
+| Browser, unbundled ESM | `pkg-web`, auto-loaded | no |
+| Browser, bundled (vite/webpack) | `js-chunks/web`, explicit | no |
+
+`engines` declares Node ≥ 18. The package is **ESM-only** (`"type": "module"`,
+no CJS build): `import` works everywhere from 18, and `require("js-chunks")`
+only works on a Node that can `require()` ESM (≥ 20.19 / ≥ 22.12).
+
+</LangOnly>
 
 ### Bundlers (vite/webpack)
+
+<LangOnly id="py, rs">
+
+<Callout type="info">
+  Bundling concerns `js-chunks` only. Switch the language selector above to
+  JavaScript to read this section.
+</Callout>
+
+</LangOnly>
+
+<LangOnly id="js">
 
 The default `js-chunks` entry detects its runtime and loads the right WASM build
 itself — that covers Node, Bun, Deno, and unbundled browser ESM. It resolves the
@@ -76,28 +121,172 @@ before the first call. If your bundler already rewrites
   `chunkPdfMarkdown(markdown, totalPages, opts?)`.
 </Callout>
 
-## Rust — rs-chunks
+</LangOnly>
 
-The reference engine. Published to crates.io as `rs-chunks`; the library import
-name is `chunks_rs`.
+<LangOnly id="rs">
 
-```bash
-cargo add rs-chunks
+**The crate.** The reference engine, pure Rust. Published to crates.io as **`rs-chunks`** (the
+name `chunks-rs` was taken); the **library import name is `chunks_rs`**.
+
+```toml
+# Cargo.toml
+[dependencies]
+rs-chunks = "0.6.2"
 ```
 
 ```rust
-use chunks_rs::{get_chunks, get_markdown};
+use chunks_rs::{get_chunks, get_markdown, Chunk, ChunkError};
 ```
+
+No `rust-version` (MSRV) is declared; the crate is edition 2021. `docs.rs`
+builds it with all features.
 
 <Callout type="info" title="PDF feature flag">
   PDF parsing is always compiled in and needs no feature flag — it is pure Rust
   and builds for `wasm32`. The default `pdf-native` feature adds only page
-  *rasterisation* (via the `liteparse` crate / PDFium), the fallback for a
-  scanned PDF that has no embedded page image. Disable default features for
-  `wasm32` targets; PDFs still parse, and a text-less one reports that it has no
-  text instead of returning page renders.
+  *rasterisation* (via the `liteparse` crate / PDFium) and pulls in `tokio`; it
+  is the fallback for a scanned PDF that has no embedded page image. Disable
+  default features for `wasm32` targets; PDFs still parse, and a text-less one
+  reports that it has no text instead of returning page renders.
+
+  ```toml
+  rs-chunks = { version = "0.6.2", default-features = false }
+  ```
 </Callout>
+
+</LangOnly>
 
 ## Verify
 
-<LangCode id="quickstart" />
+A post-install smoke test: the import resolves, the engine loads, chunks come
+back. Point it at any Markdown file — the counts in the comments are for the
+small `notes.md` used throughout these docs, so yours will differ; what matters
+is that a number and a `content_type` come back at all.
+
+<LangCode id="verify" />
+
+<LangOnly id="py">
+
+`py_chunks.__version__` is read from the installed distribution's metadata, so
+it reports `0.0.0+unknown` if you are running from a source tree that was never
+installed. That is the fastest way to spot a stale `pip install -e .`.
+
+</LangOnly>
+
+<LangOnly id="js">
+
+The first call is where the WASM module is instantiated, so a successful
+`getChunks` proves both the package **and** the binary resolved. If the loader
+fails once, the rejected promise is cached — later calls fail identically until
+the process restarts, so read the *first* error, not the tenth.
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+Run it with `cargo run`. If `use chunks_rs::…` does not resolve, check that the
+dependency is spelled `rs-chunks` and the import `chunks_rs` — they differ on
+purpose.
+
+</LangOnly>
+
+## Troubleshooting
+
+<LangOnly id="py">
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Install starts compiling Rust | No wheel for your platform (musl/Alpine, Windows ARM64, BSD), or `pip` too old to read PEP 600 tags | `pip install -U pip`, or install a Rust toolchain and let the sdist build |
+| `ERROR: … requires a different Python` | You are on 3.8 or older | `requires-python` is `>=3.9`; upgrade Python |
+| `ImportError: … _rust …` after an editable install | The compiled module was not rebuilt | `maturin develop` / reinstall; a stale `.so` outlives the Python change |
+| `py_chunks.__version__` reads `0.0.0+unknown` | Running from a source tree with no installed distribution metadata | Install the package rather than adding the directory to `sys.path` |
+| `ValueError: Unsupported file type '.xyz'` | Dispatch is by extension | Pass the real extension — with bytes, that means the `filename` argument |
+| mypy/pyright see `Any` | Stubs not picked up | Confirm `py.typed` is in the installed package; do not shadow it with a local `py_chunks/` directory |
+
+</LangOnly>
+
+<LangOnly id="js">
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `ERR_REQUIRE_ESM` | The package is ESM-only and your Node cannot `require()` ESM | Use `import` / dynamic `import()`, or Node ≥ 20.19 |
+| 404 on `chunks_wasm_bg.wasm` in a bundled browser app | The default entry hides its web import from bundlers | Import `js-chunks/web` explicitly and serve the wasm — see [Bundlers](#bundlers-vitewebpack) |
+| `ChunkError { kind: "invalid-arg" }` "Filesystem paths are only supported on Node" | You passed a path on Deno or in a browser | Pass a `Uint8Array` / `ArrayBuffer` / `Blob` plus `opts.filename` |
+| "A filename is required for byte sources…" | Bytes, or a `Blob` with no `.name` | Pass `opts.filename`, or use a `File` |
+| `ChunkError { kind: "io" }` "ENOENT: no such file or directory" | A path that does not exist, or is unreadable (`EACCES`, `EISDIR`) — Node's message is preserved | Check the path; catching `ChunkError` is enough |
+| Every call fails after one bad start-up | The WASM loader caches its rejected promise | Fix the first failure (missing `pkg-node`/`pkg-web` artifact) and restart the process |
+| "no extractable text" on a PDF that works in Python | A scanned PDF with no text layer and no embedded page image; WASM has no rasteriser | Rasterise upstream, or chunk the resulting markdown with `chunkPdfMarkdown` |
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `unresolved import chunks_rs` | The crate is `rs-chunks`, the lib is `chunks_rs` | `rs-chunks = "0.6.2"` in `Cargo.toml`, `use chunks_rs::…` in code |
+| `wasm32` build fails on `liteparse` / `tokio` | The default `pdf-native` feature pulls a C rasteriser | `default-features = false` — PDF parsing still works |
+| `no method named stream` on the crate root | Streaming is per-format; there is no dispatch-level stream | `chunks_rs::formats::pdf::stream(path, …)` |
+| `cannot find function get_chunks_with_images` | Path-based image extraction does not exist at the crate root | `get_chunks_with_images_from_bytes(&data, filename, …)`, or `formats::docx::chunk_with_images(path, …)` |
+| `non-exhaustive patterns` matching `ChunkError` | `ChunkError` is `#[non_exhaustive]` | Add a wildcard `Err(e) => …` arm |
+| A 3-rows-per-chunk spreadsheet request behaves like 1 | `sentences_per_chunk == 3` is the "caller left the default" sentinel for spreadsheet formats at the dispatch layer | Call `formats::xlsx::chunk` / `chunk_with_options` directly |
+
+</LangOnly>
+
+## Pinning and upgrading
+
+The three packages **share one version number** and are released together — from
+0.6.0 onward, `py-chunks`, `js-chunks` and `rs-chunks` always move in lockstep.
+If you use more than one SDK against the same index, pin them to the same
+version.
+
+<LangOnly id="py">
+
+```bash
+pip install "py-chunks==0.6.2"        # exact
+pip install "py-chunks~=0.6"          # 0.6.x only
+pip install -U py-chunks              # upgrade
+```
+
+</LangOnly>
+
+<LangOnly id="js">
+
+```bash
+npm install js-chunks@0.6.2           # exact (npm records ^0.6.2)
+npm install js-chunks@latest          # upgrade
+```
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+```toml
+rs-chunks = "0.6.2"                   # ^0.6.2 — compatible updates
+rs-chunks = "=0.6.2"                  # exact
+```
+
+```bash
+cargo update -p rs-chunks             # upgrade within the requirement
+```
+
+</LangOnly>
+
+<Callout type="warn" title="Re-index after a chunking upgrade">
+  Chunk *text and boundaries* changed in 0.6.0 across PDF, `.doc`, `.txt`,
+  `.md`, email and OpenDocument — almost always because more text is extracted
+  or laid out correctly. Embeddings generated with 0.5.x will not match text
+  produced by 0.6.x, so an index built before the upgrade must be rebuilt. See
+  the [0.6.0 release notes](/docs/changelog#060).
+
+  0.6.1 and 0.6.2 are packaging, typing, argument validation and error
+  ergonomics only — no chunk output changed, so upgrading anywhere within
+  0.6.x needs no re-index. See [0.6.1](/docs/changelog#061) and
+  [0.6.2](/docs/changelog#062).
+</Callout>
+
+## Next steps
+
+- [Quick Start](/docs/quick-start) — your first chunks, and how to pick a mode
+- [Input Sources](/docs/input-sources) — paths, bytes, uploads, URLs, Blobs
+- [Languages & parity](/docs/languages) — choosing an SDK, and how they stay identical
+- [API Reference](/docs/api-reference) — every signature, per language

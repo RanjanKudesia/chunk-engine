@@ -1,29 +1,82 @@
 ---
 title: Quick Start
-description: Chunk any document, stream large files, and convert to Markdown — in Python, JavaScript, or Rust.
+description: Chunk your first document, pick a mode, stream large files, and convert to Markdown — in Python, JavaScript, or Rust.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-<Callout type="info">
-  Every code block on this page is language-aware — use the tabs (or the global
-  switcher in the nav) to see Python, JavaScript, or Rust.
-</Callout>
+**Prerequisite:** the SDK for your language, installed. Everything on this page
+works with a default install and no configuration.
 
-## Batch chunking
+<InstallTabs />
 
-Pass a source and, optionally, a `mode`. Each chunk has `content`, a typed
-`content_type`, and `metadata`.
+<LangSelect />
 
-<LangCode id="quickstart" />
+## Your first chunks
+
+Point the engine at a file. That is the whole API for the common case — there is
+nothing to configure and no pipeline to assemble.
+
+<LangCode id="firstChunks" />
+
+Three fields come back on every chunk: `content` (the text), `content_type`
+(what kind of block it was), and `metadata` (headings, indices, counts). See
+[Output Schema](/docs/output-schema) for the full shape.
+
+## Pick a mode
+
+The `mode` argument decides how the document is cut up. It is the one knob worth
+setting deliberately.
+
+| I want to… | Mode | Typical use |
+| --- | --- | --- |
+| Feed coherent passages to an embedding model | `semantic` | RAG over prose |
+| Keep everything under a heading together | `section` | Document search |
+| Index each paragraph, heading and table separately | `default` / `structural` | Fine-grained retrieval |
+| Fixed sentence count per chunk | `sentence` | Uniform chunk sizes |
+| Overlapping windows | `sliding_window` | Dense retrieval, recall-first |
+| Preserve pages or slides for citations | `page_aware` | "see page 4" answers |
+
+Spreadsheets and CSV have their own modes (`row`, `table`, `sheet`). Start with
+`semantic` for LLM input and `section` for a search index; the full comparison,
+with real input→output examples, is in
+[Chunking Modes](/docs/chunking-modes).
+
+<LangCode id="modeSemantic" />
 
 ## Streaming
 
-Yield chunks one at a time with constant memory — ideal for large files or
-streaming HTTP responses. Which modes stream and their per-format memory profile
-are in [Streaming](/docs/streaming).
+Consume chunks one at a time instead of waiting for the whole list.
 
 <LangCode id="streaming" />
+
+<Callout type="warn" title="What streaming actually buys you">
+  "Constant memory" is true for some formats and some runtimes — not all of
+  them. Where it does not hold you still get lazy *delivery*, which lets you
+  overlap embedding and upsert work with iteration; you do not get a lower
+  memory ceiling.
+
+  <LangOnly id="py">
+    Genuinely incremental for **PDF and XLSX**: chunks are produced as the
+    document is read, and breaking early skips the rest of the parse. Every
+    other format — CSV included — is chunked in full by the binding and drained
+    through the same iterator, so peak memory matches `get_chunks`.
+  </LangOnly>
+  <LangOnly id="js">
+    **Never** incremental. `streamChunks` awaits `getChunks` and then yields, so
+    the whole document and the whole chunk list exist before the first value.
+    The WASM boundary is a synchronous full parse; this is async-iteration
+    ergonomics.
+  </LangOnly>
+  <LangOnly id="rs">
+    Genuinely incremental for **CSV, XLSX and PDF** (PDF in `"default"` mode —
+    the other modes rank heading sizes document-wide, so the parse completes
+    behind the iterator). The prose formats' `stream` calls `chunk` eagerly and
+    iterates the result.
+  </LangOnly>
+
+  [Streaming](/docs/streaming) has the per-format, per-runtime matrix.
+</Callout>
 
 ## Markdown conversion
 
@@ -37,13 +90,113 @@ Ask for embedded images alongside the chunks.
 
 <LangCode id="images" />
 
-Image extraction is supported for DOCX, PPTX, XLSX, HTML, PDF, DOC, PPT, EPUB,
-IPYNB, EML, and ODT/ODP — see [Supported Formats](/docs/supported-formats).
+Image extraction is supported for DOC, DOCX (family), PPT, PPTX (family), XLSX
+(family, including ODS/XLSB — not XLS), HTML/HTM, PDF, EPUB, IPYNB, EML/MBOX,
+**MSG**, and ODT/ODP — see [Supported Formats](/docs/supported-formats). Asking
+a format that has no image support returns an empty image collection rather than
+an error.
+
+## When it fails
+
+Failures are typed, so you can tell "this file is not supported" from "this file
+is broken" without string matching.
+
+<LangCode id="errorHandling" />
+
+<LangOnly id="py">
+
+Python maps engine failures onto built-in exceptions: `FileNotFoundError` for a
+missing path, `ValueError` for an unsupported extension / bad mode / bad
+window-overlap combination / missing filename on bytes, `TypeError` for a source
+type it cannot use, and `RuntimeError` when a document cannot be parsed.
+
+</LangOnly>
+
+<LangOnly id="js">
+
+`ChunkError` carries a `kind` of `unsupported`, `invalid-arg`, `parse`, `io` or
+`unknown`, and is a real `Error` subclass. Everything the **engine** rejects
+arrives that way, and so does every host-side failure the wrapper raises —
+including a path that does not exist, which surfaces as `kind: "io"` carrying
+Node's own `ENOENT` message. Keeping a non-`ChunkError` branch in the catch is
+still good practice for genuinely unexpected errors.
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+`ChunkError` is `#[non_exhaustive]`, so a `match` needs a wildcard arm. Every
+dispatch entry point runs the parse behind a `catch_unwind` boundary: a panic in
+a third-party parser surfaces as `ChunkError::Parse`, never as an unwind into
+your code.
+
+</LangOnly>
+
+[Error Handling](/docs/error-handling) has the complete table.
+
+## Language notes
+
+<LangOnly id="py">
+
+- **The source-agnostic surface is 13 functions.** `get_chunks` and
+  `stream_chunks` sniff the source type; the five `*_from_path` /
+  `*_from_bytes` / `*_from_fileobj` / `*_from_upload` /
+  `*_from_s3_presigned_url` variants of each are exported too if you would
+  rather be explicit.
+- **Uploads and URLs are first-class.** `get_chunks_from_upload(file)` handles a
+  FastAPI / Starlette / Django upload (read `upload_file.file` under the hood,
+  so it is safe in a sync handler), and `get_chunks("https://…")` downloads and
+  chunks in memory.
+- **`get_markdown` is narrower than `get_chunks`**: no URLs, no upload objects.
+  See [Input Sources](/docs/input-sources#urls-and-pre-signed-links).
+- **Bytes never touch disk** (since 0.6.1) — but *streaming* from bytes writes a
+  temp file, because the engine's streaming surface is path-based.
+- **Options are keyword-only** after the source, and chunks are plain dicts:
+  `chunk["content_type"]`.
+
+</LangOnly>
+
+<LangOnly id="js">
+
+- **One polymorphic function per operation.** `getChunks` accepts a path
+  (Node/Bun only), a `Uint8Array`, an `ArrayBuffer`, a Node `Buffer`, a `Blob`
+  or a `File`.
+- **Byte sources need a filename.** `opts.filename` is required for anything
+  that does not carry its own name — a `File` does, a bare `Blob` does not.
+- **`streamChunks` is ergonomics, not bounded memory.** It resolves the full
+  parse first and then yields; use it to overlap downstream work, not to survive
+  a huge file.
+- **Deno cannot use path sources** — pass bytes with `opts.filename`.
+- **There is no `delimiter` or `encoding` option.** CSV knobs are Python and
+  Rust only.
+- **Markdown you already have** can be chunked directly with
+  `chunkPdfMarkdown` / `chunkPdfMarkdownWithImages` / `normalizePdfMarkdown`.
+
+</LangOnly>
+
+<LangOnly id="rs">
+
+- **Options are positional** on the six dispatch functions:
+  `get_chunks(path, mode, window_size, overlap, sentences_per_chunk,
+  paragraphs_per_page)`. For the format-specific knobs (`rows_per_chunk`,
+  `delimiter`, `encoding`, `include_headers`, …) use `ChunkOptions` with a
+  format module's `chunk_with_options(path, &opts)`, or that module's positional
+  `chunk`.
+- **Image extraction at the crate root is bytes-only.** There is no
+  `get_chunks_with_images(path, …)` — read the file and call
+  `get_chunks_with_images_from_bytes`, or use
+  `formats::<fmt>::chunk_with_images(path, …)` (available for 12 formats).
+- **Streaming is per-format.** `formats::<fmt>::stream(path, …)` for 17 formats;
+  only `pdf` and `xlsx` also offer `stream_from_bytes`. Nothing streams at the
+  dispatch layer.
+- **The crate is `rs-chunks`; the import is `chunks_rs`.**
+
+</LangOnly>
 
 ## Next steps
 
-- [Input Sources](/docs/input-sources) — paths, bytes, uploads, URLs
+- [Input Sources](/docs/input-sources) — paths, bytes, uploads, URLs, Blobs
 - [Chunking Modes](/docs/chunking-modes) — pick the right strategy
-- [Streaming](/docs/streaming) — bounded-memory processing for large files
+- [Streaming](/docs/streaming) — what streams incrementally, and what only looks like it
 - [Framework Integration](/docs/framework-integration) — FastAPI, Express, Axum, and more
 - [API Reference](/docs/api-reference) — full signatures per language

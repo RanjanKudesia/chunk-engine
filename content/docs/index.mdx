@@ -13,22 +13,36 @@ Rust**, across **36 file formats**.
 
 <LangCode id="quickstart" />
 
-Every chunk has three fields — `content`, a typed `content_type`, and
-`metadata` — ready to embed, index, or feed to an LLM.
+## What a chunk looks like
+
+Every chunk has exactly three fields: `content`, a typed `content_type`, and a
+`metadata` object. Here is a complete one — no elisions — from `notes.md` in
+`semantic` mode at default parameters:
+
+<LangCode id="chunkShape" />
+
+`content` goes to your embedding model; `content_type` tells you what kind of
+block it was; `metadata` carries the provenance you need to filter, rank and
+cite. The full catalogue is in [Output Schema](/docs/output-schema) and
+[Metadata Reference](/docs/metadata-reference).
 
 ## One engine, three languages
 
-| Package | Install | Runtime |
+<InstallTabs />
+
+| Package | Import name | Runtime |
 | --- | --- | --- |
-| **py-chunks** (PyPI) | `pip install py-chunks` | Python, via PyO3 |
-| **js-chunks** (npm) | `npm install js-chunks` | Node · Bun · Deno · browsers, via WASM |
-| **rs-chunks** (crates.io) | `cargo add rs-chunks` | Rust — the reference engine |
+| **py-chunks** (PyPI) | `py_chunks` | Python 3.9+, via PyO3 |
+| **js-chunks** (npm) | `js-chunks` | Node · Bun · Deno · browsers, via WASM |
+| **rs-chunks** (crates.io) | `chunks_rs` | Rust — the reference engine |
 
 <Callout title="Byte-identical output">
   The SDKs wrap the same engine and are parity-checked to emit exactly the same
-  chunks — 2204/2214 comparisons identical, with the remainder tracing to the
-  reference engine's own non-determinism. See [Languages &
-  parity](/docs/languages).
+  chunks: **3,222 / 3,222 comparisons byte-identical (100%)** across every
+  fixture × every mode, re-verified 2026-08-08. The one known divergence is a
+  scanned PDF that WASM cannot rasterise. See [Languages &
+  parity](/docs/languages) for the numbers, the caveats, and the commands that
+  reproduce them.
 </Callout>
 
 ## Why chunk-engine
@@ -39,13 +53,21 @@ Every chunk has three fields — `content`, a typed `content_type`, and
   Excel, PDF, HTML, Markdown, email, eBooks, notebooks, and more.
 - **Structure-aware chunking.** Seven document modes and dedicated spreadsheet
   modes keep headings, tables, and lists intact.
-- **Streaming built in.** Yield chunks with constant memory over huge files.
+- **Streaming built in.** Consume chunks one at a time instead of waiting for a
+  whole document. In Rust and Python it is genuinely incremental — bounded
+  memory — for PDF and spreadsheets, and lazy delivery over a completed parse
+  everywhere else. In JavaScript it is always lazy delivery over a completed
+  parse, never bounded-memory. [The honest matrix](/docs/streaming) says which
+  is which, per format and per SDK.
 
 ## Start here
 
 <Cards>
   <Card title="Installation" href="/docs/installation" description="Install for Python, JavaScript, or Rust." />
   <Card title="Quick Start" href="/docs/quick-start" description="Chunk your first document in a few lines." />
-  <Card title="Languages & parity" href="/docs/languages" description="How the three SDKs relate and stay identical." />
+  <Card title="Playground" href="/playground" description="Chunk a document in the browser — no install." />
+  <Card title="Supported formats" href="/docs/supported-formats" description="All 36 extensions and what each one produces." />
+  <Card title="Languages & parity" href="/docs/languages" description="Choose an SDK, and how the three stay identical." />
+  <Card title="Benchmarks" href="/benchmarks" description="Throughput and retrieval-quality measurements." />
   <Card title="API Reference" href="/docs/api-reference" description="Signatures for all three languages." />
 </Cards>

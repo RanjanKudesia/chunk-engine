@@ -1,21 +1,38 @@
 ---
 title: Languages & parity
-description: How py-chunks, js-chunks, and rs-chunks relate — and how they stay byte-identical.
+description: How py-chunks, js-chunks, and rs-chunks relate — what each one can do, and how their output is kept identical.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
 chunk-engine ships as three packages that share one Rust core. Choose whichever
-fits your stack; the output is the same.
+fits your stack; the chunks are the same.
 
-| Package | Registry | Install | How it works |
-| --- | --- | --- | --- |
-| **py-chunks** | PyPI | `pip install py-chunks` | Native Python extension via PyO3 |
-| **js-chunks** | npm | `npm install js-chunks` | WASM core — Node, Bun, Deno, browsers |
-| **rs-chunks** | crates.io | `cargo add rs-chunks` | The reference engine — pure Rust |
+| Package | Registry | Install | Import name | How it works |
+| --- | --- | --- | --- | --- |
+| **py-chunks** | PyPI | `pip install py-chunks` | `py_chunks` | Native Python extension via PyO3 |
+| **js-chunks** | npm | `npm install js-chunks` | `js-chunks` | WASM core — Node, Bun, Deno, browsers |
+| **rs-chunks** | crates.io | `cargo add rs-chunks` | `chunks_rs` | The Rust engine itself |
 
-`rs-chunks` is the source of truth; `py-chunks` and `js-chunks` wrap the same
-engine (the WASM build for JS is produced from the Rust crate).
+## Where the code lives, and what "reference" means
+
+Two different things are easy to conflate, so, precisely:
+
+- **`rs-chunks` is the source of truth for the engine *code*.** The parsing and
+  chunking logic lives there. `py_chunks` and `js-chunks` each vendor a *copy*
+  of the crate (they publish from separate repos and cannot path-depend on a
+  sibling), and a sync script rewrites those copies from `rs-chunks` and fails
+  the build if either has drifted. A vendored copy that nothing checks is a
+  copy that drifts — that is exactly how three past defects happened.
+- **`py-chunks` is the *behavioural* baseline the parity harness compares
+  against.** It is the oldest of the three and the one whose output existing
+  indexes were built from, so "unchanged" is defined as "matches py-chunks". The
+  harness dumps chunks from the Rust engine and re-computes them through the
+  Python binding, which is what proves the vendored copies and the binding
+  layers do not distort anything.
+
+So: same code, one direction of code flow, and an independent behavioural check
+in the other direction. Neither statement makes the other false.
 
 ## API dialects
 
@@ -24,24 +41,144 @@ The operations are identical; the surface follows each language's conventions.
 | Concept | Python | JavaScript | Rust |
 | --- | --- | --- | --- |
 | Batch | `get_chunks(...)` | `getChunks(...)` | `get_chunks(...)` |
-| Stream | `stream_chunks(...)` | `streamChunks(...)` | `formats::*::stream(...)` |
+| Stream | `stream_chunks(...)` | `streamChunks(...)` | `formats::<fmt>::stream(...)` |
 | Markdown | `get_markdown(...)` | `getMarkdown(...)` | `get_markdown(...)` |
+| Images | `list_images=True` | `listImages: true` | `get_chunks_with_images_from_bytes(...)` |
 | Content type field | `chunk["content_type"]` | `c.contentType` | `c.content_type` |
+| Metadata | `dict` | `Record<string, unknown>` | `serde_json::Value` |
 | Options | keyword args | options object | positional args |
-| Failures | raised exceptions | thrown `ChunkError` | `Err(ChunkError)` |
+| Failures | built-in exceptions | thrown `ChunkError` | `Err(ChunkError)` |
+
+Metadata keys are **snake_case in all three**, including JavaScript — only the
+`content_type` field itself is camelCased on the JS `Chunk`.
+
+## Capability matrix
+
+Same engine, different amounts of convenience wrapped around it. Nothing here is
+an output difference; it is all about how you get bytes in and results out.
+
+| Capability | py-chunks | js-chunks | rs-chunks |
+| --- | --- | --- | --- |
+| Filesystem path | yes | Node / Bun only | yes |
+| Raw bytes | yes | yes | yes |
+| File-like object | yes | — | — |
+| Framework upload (`UploadFile` …) | yes | — | — |
+| HTTP(S) / pre-signed URL | yes | — | — |
+| `Blob` / `File` | — | yes | — |
+| Markdown-string input | — | `chunkPdfMarkdown` family | — |
+| `delimiter` / `encoding` options | yes, on every entry point | **no** | per-format fns or `ChunkOptions` |
+| Images **from a path** | yes | yes | **no** at crate root — per-format `chunk_with_images` (12 formats) |
+| Images **from bytes** | yes | yes | yes |
+| Streaming entry point | source-agnostic `stream_chunks` | `streamChunks` (all sources) | per-format only — no dispatch-level stream |
+| Streaming from bytes | yes (writes a temp file) | yes | `pdf` and `xlsx` only |
+| Genuinely incremental streaming | PDF, XLSX | none | CSV, XLSX, PDF (`default` mode) |
+| Scanned PDF, no text layer | page rasters (PDFium, vendored) | "no extractable text" | page rasters with `pdf-native` (default on; off for `wasm32`) |
+| Error type | `FileNotFoundError` · `ValueError` · `TypeError` · `RuntimeError` · `OSError` · `OverflowError` (negative counts, some formats) | `ChunkError` for everything, including host `fs` errors (`kind: "io"`, Node's verbatim message) | `ChunkError` (`#[non_exhaustive]`) |
+| Typed mode enum | no — strings | yes, `ChunkMode` union | yes, `ChunkMode` enum (reachable via `ChunkOptions`) |
+| Format-specific chunkers | 18 `chunk_*` + 18 `stream_chunk_*` | — | 17 format modules |
+
+<Callout type="warn" title="Two asymmetries that surprise people">
+  **Rust cannot extract images from a path at the crate root.** There is no
+  `get_chunks_with_images` — only `get_chunks_with_images_from_bytes`. Read the
+  file yourself, or call `formats::docx::chunk_with_images(path, …)`.
+
+  **JavaScript has no `delimiter` or `encoding` option.** CSV files that are
+  semicolon-separated or latin-1 encoded need Python or Rust, or a re-encode
+  before you hand over the bytes.
+</Callout>
 
 ## Parity
 
-`rs-chunks` is validated against the `py-chunks` reference engine over **every
-fixture × every mode**:
+Three separate harnesses, three separate claims. They measure different things
+and it is worth keeping them apart.
 
-- **3,222 / 3,222 comparisons byte-identical (100%).** Every family — OOXML,
-  legacy binary (`.doc`/`.ppt`), OpenDocument, email, ebook, PDF, notebook,
-  and delimited — is identical, including `semantic`-mode
-  `primary_merge_reason`: all engines share the same deterministic tie-break
-  (sort by count descending, then key ascending).
-- **Image extraction and markdown conversion** are verified byte-identical by
-  their own dedicated harnesses on every image-bearing fixture.
+### Chunk parity — rs ↔ py
 
-Adversarial inputs fail with a clean, catchable error and never panic — every
-public entry point is guarded at the dispatch boundary.
+**3,222 / 3,222 comparisons byte-identical (100%)**, over every fixture × every
+mode, last re-verified **2026-08-08**.
+
+Every family is identical — OOXML, legacy binary (`.doc` / `.ppt`),
+OpenDocument, email, ebook, PDF, notebook and delimited — including
+`semantic`-mode `primary_merge_reason`: all three engines share the same
+deterministic tie-break (sort by count descending, then key ascending), so
+there is no residual non-determinism. `get_markdown` is compared by the same
+harness, because a public API once diverged silently while a chunks-only check
+stayed at zero mismatches.
+
+### Image parity — js ↔ py
+
+**374 / 375 fixtures identical**, comparing image *names* and image *bytes*
+across every format that carries images.
+
+Names matter as much as bytes here. The `rs`↔`py` image check compares two
+native builds, so a target-dependent fault cancels out; this harness is the one
+that catches a WASM-vs-native difference.
+
+### PDF parity — js ↔ py
+
+**23 / 24 fixtures identical**, comparing chunks, markdown *and* image bytes
+across three modes.
+
+### The one difference, in both js harnesses
+
+It is the same fixture and the same cause in each: **a scanned PDF with no text
+layer and no embedded page image**. Falling back to a page *render* requires a
+rasteriser, and there is no PDFium in WASM. Python and Rust return page rasters;
+JavaScript reports "no extractable text". Both harnesses list the fixture by
+name and assert the count, so the exception cannot quietly grow to cover
+something else.
+
+### Reproduce the claim
+
+Run from the workspace root, with `py_chunks` built (`maturin develop
+--release`) and `js-chunks` built (`npm run build:wasm && npm run build`):
+
+```bash
+# Chunk parity, rs <-> py — 3,222 / 3,222
+cd rs-chunks && cargo run --release --example parity_dump > /tmp/parity.jsonl
+cd ../py_chunks && python ../rs-chunks/examples/parity_check.py < /tmp/parity.jsonl
+
+# Image parity, js <-> py — 374 / 375 (dumps from py, then runs the node checker)
+python image_parity.py
+
+# PDF parity, js <-> py — 23 / 24
+python pdf_parity.py
+```
+
+Adversarial inputs fail with a clean, catchable error and never panic: every
+public dispatch entry point runs the parse behind a `catch_unwind` boundary, so
+a panic inside a third-party parser surfaces as `ChunkError::Parse` rather than
+unwinding into your process.
+
+## Choosing an SDK
+
+**Start from where the bytes already are.**
+
+- **Python** if you are behind a web framework, ingesting from S3, or living in
+  a data/ML stack. It has the widest source surface — uploads, file objects and
+  URLs are one call each — plus `delimiter`/`encoding` for awkward CSVs, and it
+  is the behavioural baseline, so it is the one to reach for when you need to
+  settle an argument about what the "right" output is.
+- **JavaScript** if the document is in a browser, an edge function, or a Node
+  service that already holds it as a `File` or a `Buffer`. It is the only SDK
+  that runs client-side, and the only one that can chunk Markdown you parsed
+  elsewhere. Accept that a scanned PDF with no text layer will not work, that
+  paths are Node/Bun only, and that streaming is ergonomic rather than bounded.
+- **Rust** if you are embedding chunking in a service and want no FFI, no WASM,
+  and full control. It gives you the format modules directly — per-format
+  options, `ChunkOptions`, and real incremental streaming for CSV, XLSX and PDF.
+  Accept the positional-argument dispatch API and the bytes-only image entry
+  point.
+
+**Mixing them is fine and is the point.** Index with Python in a batch job,
+serve previews from JavaScript in the browser, and both see the same chunks — so
+long as you pin the same version. The three packages share one version number
+and are released together.
+
+## Next steps
+
+- [Installation](/docs/installation) — requirements, wheels, and pinning
+- [Input Sources](/docs/input-sources) — every entry point, per SDK
+- [Streaming](/docs/streaming) — the per-format, per-runtime matrix
+- [Error Handling](/docs/error-handling) — the full error contract
+- [API Reference](/docs/api-reference) — signatures for all three languages

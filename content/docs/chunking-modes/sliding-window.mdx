@@ -1,34 +1,118 @@
 ---
 title: sliding_window
-description: Overlapping windows of content for dense retrieval.
+description: Overlapping windows of content for dense retrieval — with the exact definition of a unit, a step, and a range.
 ---
 
+import { Callout } from "fumadocs-ui/components/callout";
+
 `sliding_window` builds overlapping chunks: each window covers `window_size`
-units and shares `overlap` units with its neighbour. The overlap means a fact
-that sits on a boundary still appears intact in at least one chunk — useful for
-dense retrieval and sliding-context inference.
+consecutive **units** and shares `overlap` units with its neighbour. A fact
+sitting on a boundary still appears intact in at least one chunk, which is what
+makes it useful for dense retrieval.
 
-```python
-from py_chunks import get_chunks
+<LangSelect />
 
-chunks = get_chunks("notes.md", mode="sliding_window", window_size=3, overlap=1)
-```
+## Real input → real output
+
+<LangCode id="modeSlidingWindow" />
+
+## The arithmetic
+
+- The step between window starts is **`window_size − overlap`**. At the defaults
+  (`window_size=3`, `overlap=1`) that is a step of 2, so consecutive windows
+  share exactly one unit.
+- Window *n* covers units `[n × step, n × step + window_size − 1]`.
+- **The final window may be short.** The end is clamped to the last unit, so a
+  document of 7 units at `window_size=3, overlap=1` yields windows
+  `[0,2] [2,4] [4,6]` — but a document of 6 units yields `[0,2] [2,4] [4,5]`,
+  the last one only two units wide. Do not assume `block_count == window_size`.
+- A document with fewer units than `window_size` produces exactly one short
+  window rather than an error.
+
+<Callout type="warn" title="overlap ≥ window_size is a hard error, not a clamp">
+  `overlap` must be strictly less than `window_size`. Violating it raises before
+  any parsing happens:
+
+  ```
+  overlap must be less than window_size
+  ```
+
+  Python raises `ValueError`; Rust returns `ChunkError::InvalidArg`; JavaScript
+  throws a `ChunkError` with `kind: "invalid-arg"`. That is now uniform across
+  every format and both the path and the bytes route, so `kind` is safe to
+  branch on. `window_size` must likewise be &gt; 0, and the sentence for that is
+  `window_size must be greater than 0` in all three SDKs.
+
+  There is no longer an exception. **EPUB** used to skip the shared argument
+  check and return an empty chunk list instead of raising — in every SDK,
+  Python included — and it now validates like everything else.
+</Callout>
+
+## What a "unit" is
+
+The unit is not the same thing in every format. This is the single most common
+source of surprise: `window_size=3` means three of *something*, and that
+something changes.
+
+| Family | Unit | Range key in metadata |
+| --- | --- | --- |
+| Markdown, HTML, TXT, PDF, EPUB, RTF, EML/MBOX, MSG, ODT, ODP, JSON, IPYNB | markdown block — a paragraph, list, table, code block, **or heading**. A heading is a unit like any other here. | `paragraph_range` |
+| DOCX (+ DOCM/DOTX/DOTM) | paragraph | `paragraph_indices` (the actual indices, plus `paragraph_meta`) |
+| PPTX family | **slide** — `window_size=3` is three slides | `slide_range` |
+| PPT | slide-derived paragraph | — |
+| Spreadsheets (XLSX family) | data row | `start_row` / `end_row` |
+| CSV / TSV | data row | `row_start` / `row_end` |
+
+<Callout type="info" title="`paragraph_range` counts UNITS, not blocks and not chunks">
+  Three different index spaces appear in this mode's metadata, and mixing them
+  up produces silently wrong citations:
+
+  - **`paragraph_range`** — `[first_unit, last_unit]`, **inclusive**, in *unit*
+    indices. Empty blocks are skipped when units are built, so unit index *n* is
+    not necessarily source block *n*.
+  - **`window_index`** — which window this is, 0-based.
+  - **`chunk_index`** — position in the returned chunk list. In this mode the
+    two happen to be equal, because every chunk is a window; that is *not* true
+    in other modes, so don't rely on it as a general rule.
+
+  Spreadsheet and CSV row ranges are **1-based and half-open at the header**:
+  the first CSV window at the defaults reports `row_start: 1, row_end: 3`.
+</Callout>
+
+## What it emits
+
+`sliding_window` is the one mode where every chunk really does carry the same
+`content_type`:
+
+| Family | `content_type` |
+| --- | --- |
+| All document formats | `sliding_window` |
+| Spreadsheets, CSV / TSV | `row_window` |
+
+No headings, tables or code blocks are split out — they are simply units inside
+whatever window contains them. Measured: `prose_heavy.md` → 20 chunks, all
+`sliding_window`; `plotly_apple_stock.csv` → 120 chunks, all `row_window`.
 
 ## Parameters
 
 | Parameter | Default | Notes |
 | --- | --- | --- |
-| `window_size` | `3` | Units per window. Must be greater than 0. |
-| `overlap` | `1` | Units shared between adjacent windows. Must be less than `window_size`. |
+| `window_size` | `3` | Units per window. Must be &gt; 0. |
+| `overlap` | `1` | Units shared between adjacent windows. Must be &lt; `window_size`. |
 
-## content_type
+PPTX additionally caps window content length as a safety measure and reports
+`truncated: true` on any window it had to cut.
 
-Chunks carry the `content_type` `sliding_window`. Metadata typically includes
-the window index and size so you can de-duplicate overlapping hits at query
-time.
+## Metadata
+
+`window_size`, `overlap`, `window_index`, `chunk_index`, `block_count` and the
+per-family range key above, plus `section_heading` / `heading_path` taken from
+the **start** of the window. Full listing in the
+[Metadata Reference](/docs/metadata-reference).
 
 ## When to use it
 
 - Dense retrieval where boundary facts must not be lost.
 - Sliding-context inference over long documents.
-- Recall-sensitive search where some redundancy is acceptable.
+- Recall-sensitive search where some redundancy is acceptable — de-duplicate at
+  query time using `window_index` or the range key.

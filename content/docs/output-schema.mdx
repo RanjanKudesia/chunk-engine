@@ -1,34 +1,83 @@
 ---
 title: Output Schema
-description: Every chunk is a dict with content, content_type, and metadata — plus the full content-type catalogue.
+description: The exact object every chunk is — with complete, real chunks for every content type, every mode, and every return shape.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Every chunk returned by `get_chunks` / `stream_chunks` is a plain Python `dict`
-with exactly three keys:
+Every chunk is an object with exactly **three** keys — `content`,
+`content_type`, `metadata` — in all three SDKs. Everything else on this page is
+about what actually turns up inside them.
 
-```python
-{
-    "content": "Revenue grew 18% quarter-over-quarter…",
-    "content_type": "semantic",
-    "metadata": { "chunk_index": 4, "section_heading": "Q3 Summary", ... }
-}
-```
+<LangSelect />
 
-| Key | Type | Description |
+| Key | Type | Always present |
 | --- | --- | --- |
-| `content` | `str` | The chunk's text. |
-| `content_type` | `str` | What the chunk represents (see below). |
-| `metadata` | `dict` | Format- and mode-specific fields. Treat all as optional. |
+| `content` | string | yes |
+| `content_type` | string (`contentType` in JS) | yes |
+| `metadata` | object / dict / `serde_json::Value` | yes, but **every key inside it is optional** |
 
-### Accessing the fields
+## A complete chunk
 
-The shape is identical across languages. Only the field access differs — note
-that **JavaScript exposes `contentType` (camelCase)** while Python and Rust use
-`content_type`.
+Not an excerpt — this is the whole object, captured from a real run at default
+parameters.
+
+<LangCode id="chunkShape" />
+
+### Reading the fields
 
 <LangCode id="outputAccess" />
+
+## What a whole call returns
+
+<LangCode id="chunksResult" />
+
+| SDK | Without images | With images |
+| --- | --- | --- |
+| Python | `list[dict]` | `ChunksResult` — `.chunks: list[dict]`, `.images: dict[str, bytes]` |
+| JavaScript | `Promise<Chunk[]>` | `Promise<{ chunks, images }>` — `images` is an **array** of `{ name, data }`, not a dict |
+| Rust | `Vec<Chunk>` | `(Vec<Chunk>, Vec<(String, Vec<u8>)>)` |
+
+<Callout type="warn" title="The images container differs by language">
+  Python keys images by name (`result.images["75a3c27ad7854d78.png"]`);
+  JavaScript and Rust hand you an ordered **sequence** of pairs. A port that
+  assumes a dict on the JS side gets `undefined`, not an error.
+</Callout>
+
+<LangOnly id="rs">
+There is **no streaming function on the dispatch layer** in `rs-chunks`.
+`chunks_rs` re-exports six source-agnostic entry points (`get_chunks`,
+`get_chunks_from_bytes`, `get_chunks_with_images_from_bytes`, `get_markdown`,
+`get_markdown_from_bytes`, `get_markdown_with_images_from_bytes`) and none of
+them stream. Streaming is per-format: `chunks_rs::formats::pdf::stream_chunks`
+and friends. See [Streaming](/docs/streaming).
+</LangOnly>
+
+## Order and indexing
+
+Chunks come back in **document order** — the order a person reads the file in.
+That is the only ordering guarantee, and it is the one worth relying on.
+
+Position *metadata* is a different story, and the traps are worth stating
+plainly:
+
+- **`chunk_index` is absent in `default` / `structural`** for almost every
+  format. It appears in the derived modes (`section`, `semantic`,
+  `sliding_window`, `sentence`, `page_aware`) and in every spreadsheet and
+  CSV mode. The exceptions run both ways: `.doc` and `.ppt` emit it in *all*
+  modes, while DOCX omits it in `section`, `semantic` and `sliding_window`.
+  If you need a stable position, use the index of the array you were handed.
+- **`total_chunks` is emitted by `.doc` and `.ppt` only** — plus one edge case:
+  DOCX `page_aware` adds `chunk_index` + `total_chunks` **only to the parts of a
+  page that had to be split**, where they mean "part 1 of 2 of this page", not a
+  document-wide position. A `lists.docx` run at default parameters returns seven
+  page chunks, of which exactly two carry those keys.
+- **Image chunks are not always where you expect.** DOCX places each image chunk
+  at its anchoring paragraph's position (indices 4 and 5 of 13 in
+  `all_round.docx`). Every other image-bearing format puts **all** image chunks
+  **first** — PDF, PPTX, XLSX, HTML, EPUB, IPYNB, EML/MBOX/MSG, ODT/ODP, DOC and
+  PPT. So slicing "the first N chunks" as a preview can hand you nothing but
+  filenames.
 
 ## Chunk size
 
@@ -50,65 +99,307 @@ because slicing it would destroy the thing it represents.
 Prose is always bounded: an over-long paragraph is cut at a sentence, and a
 sentence with no boundary at all is cut at a word.
 
-## content_type values
+## content_type: two families, not one
 
-The `content_type` tells you what a chunk is. Prose and markup formats emit:
+The single most expensive assumption you can make about this API is that
+selecting a mode makes every chunk carry that mode's name. It does not, and
+which way it goes depends on the **format**.
 
-| Value | Meaning |
-| --- | --- |
-| `heading` | A heading / section title. |
-| `plain_paragraph` | A standard paragraph. |
-| `long_single_paragraph` | A single long paragraph chunk. |
-| `short_disconnected_paragraph` | A short, standalone paragraph. |
-| `bullet_list` | A bulleted or numbered list. |
-| `table` | A table, or one row-aligned segment of an oversized table. |
-| `code_block` | A fenced/indented code block. |
-| `image` | An extracted image (when `list_images=True`). |
+Two real censuses, same mode, default parameters:
 
-Mode-named types appear when you select that mode: `section`, `semantic`,
-`sliding_window`, `sentence`, `page_aware`.
+```text
+get_chunks("arxiv_1706.03762_attention.pdf", mode="section")
+  44 chunks → heading: 16   section: 28          ← 36% are NOT "section"
 
-DOCX additionally emits `mixed_content`, `footnote_caption`, and `header_footer`.
-
-<Callout type="info" title="Spreadsheets">
-  Spreadsheet and CSV chunks use their own content types — for example
-  `row_document`, `table_region`, `sheet`, `row_window`, `sheet_region`, and
-  `semantic_group` (XLSX), or `row_group` and `row_window` (CSV).
-</Callout>
-
-## Metadata fields
-
-`metadata` is a dict whose keys depend on the format and mode — **all fields are
-optional**. Commonly-seen keys include:
-
-- `chunk_index`, `total_chunks` — position within the document
-- `source_type`, `document_metadata` — provenance
-- `section_heading`, `heading_path`, `heading_level`, `section_level` — structure
-- `page_number`, `page_break_type` — page layout (`page_aware`)
-- `window_index`, `window_size`, `overlap` — windows (`sliding_window`)
-- `sentences_per_chunk`, `actual_sentence_count` — sentence mode
-- `sheet_name`, `sheet_index`, `start_row`, `end_row`, `header_row`, `col_count` — spreadsheets
-- `slide_number`, `slide_range`, `slide_count`, `total_slides` — presentations
-- `image_name`, `alt_text` — image chunks
-- `merge_reasons`, `keyword_density` — semantic grouping
-
-<Callout>
-  Because metadata is optional and format-dependent, always use `.get()` when
-  reading a specific field rather than assuming it's present.
-</Callout>
-
-For the **exact keys each format emits in each mode** — plus the enumerated
-`merge_reason` / `primary_merge_reason` values — see the
-[Metadata Reference](/docs/metadata-reference).
-
-## Image chunks & results
-
-With `list_images=True`, `get_chunks` returns a `ChunksResult`:
-
-```python
-result.chunks   # list[dict] — text chunks plus content_type="image" chunks
-result.images   # dict[str, bytes] — {"<hash>.jpeg": b"...", ...}
+get_chunks("all_round.docx", mode="section")
+   9 chunks → section: 9                          ← everything absorbed
 ```
 
-`get_markdown(..., list_images=True)` returns a `MarkdownResult` with
-`.markdown` (a string with `![](hash.ext)` refs) and `.images`.
+<Callout type="warn" title="Filtering on the mode name silently drops content">
+  `[c for c in chunks if c["content_type"] == "section"]` throws away sixteen
+  heading chunks from that PDF — the section titles, the highest-signal text in
+  the document. Filter on what you want to *exclude*, or don't filter at all.
+</Callout>
+
+**Family A — structure survives the mode.** PDF, Markdown, HTML, TXT, RTF,
+EPUB, IPYNB, EML/MBOX/MSG, ODT/ODP and JSON keep structural chunks alongside the
+mode's own chunks. Measured on the fixtures named above:
+
+| Mode | What PDF emits | What Markdown emits |
+| --- | --- | --- |
+| `default` / `structural` | `heading`, `plain_paragraph`, `long_single_paragraph`, `short_disconnected_paragraph`, `bullet_list`, `table` | `heading`, `plain_paragraph`, `long_single_paragraph`, `short_disconnected_paragraph`, `code_block`, `bullet_list`, `table` |
+| `section` | `heading` + `section` | `heading` + `section` |
+| `semantic` | `heading` + `table` + `semantic` | `heading` + `code_block` + `table` + `semantic` |
+| `sentence` | `heading` + `bullet_list` + `table` + `sentence` | `heading` + `code_block` + `table` + `bullet_list` + `sentence` |
+| `page_aware` | `heading` + `page_aware` | `heading` + `page_aware` |
+| `sliding_window` | `sliding_window` only | `sliding_window` only |
+
+The rule inside this family: `section` and `page_aware` re-group prose and keep
+headings separate; `semantic` and `sentence` additionally pass **atomic** units
+(tables, code blocks, lists) through untouched, because re-grouping them would
+destroy them. HTML and EPUB are the soft edge — their `semantic` chunker can
+merge a heading into the chunk beneath it, so some headings do disappear there.
+
+**Family B — the mode replaces everything.** DOCX, DOC, PPTX, PPT and the
+tabular formats emit one content type per mode, with no structural remainder.
+DOCX `default` emits `mixed_content`, `heading` and `table`; every derived mode
+emits only its own name.
+
+**`sliding_window` is Family B in every format**, without exception — it is a
+flat window over the block stream and has no structure to preserve.
+
+### The catalogue
+
+| Value | Where it comes from |
+| --- | --- |
+| `heading` | A heading or section title, alone in its own chunk. |
+| `plain_paragraph` | A standard paragraph. |
+| `long_single_paragraph` | One paragraph long enough to stand alone as a chunk. |
+| `short_disconnected_paragraph` | A short paragraph with no neighbour to merge with. |
+| `bullet_list` | A bulleted or numbered list — also the per-record type for JSON/JSONL/NDJSON. |
+| `table` | A table, or one row-aligned segment of an oversized one. |
+| `code_block` | A fenced or indented code block; an IPYNB code cell and its output. |
+| `image` | See [Image chunks](#image-chunks) — two different things share this name. |
+| `mixed_content`, `footnote_caption`, `header_footer` | DOCX only. |
+| `section`, `semantic`, `sliding_window`, `sentence`, `page_aware` | The mode's own chunks. |
+| `row_document`, `table_region`, `sheet`, `row_window`, `sheet_region`, `semantic_group` | Spreadsheets (XLSX/XLS/XLSM/XLSB/ODS/XLTX/XLTM). |
+| `row_group`, `row_window` | CSV / TSV. |
+
+### One real chunk per type
+
+Every block below is verbatim engine output at default parameters.
+
+```json
+// heading — md/test.md, default
+{ "content": "Complex Markdown Test Document",
+  "content_type": "heading",
+  "metadata": { "document_metadata": { "source_type": "md" },
+                "section_heading": null, "section_level": 1 } }
+
+// table — md/test.md, default (content abridged to two rows for width)
+{ "content": "| Region | Nodes | Avg Latency |\n|---|---:|---:|\n| us-east-1 | 12 | 140 ms |",
+  "content_type": "table",
+  "metadata": { "document_metadata": { "source_type": "md" },
+                "section_heading": "2.2 Secondary Table — Region Breakdown",
+                "section_level": 3 } }
+
+// code_block — md/test.md, default
+{ "content": "```\n[Source File]\n     │\n     ▼\n[/extract]  ──►  ExtractedData (JSON)\n```",
+  "content_type": "code_block",
+  "metadata": { "document_metadata": { "source_type": "md" },
+                "section_heading": "3.2 Data-flow diagram (text)",
+                "section_level": 3 } }
+
+// bullet_list — md/test.md, default
+{ "content": "Docs: Pylint C0415 guidance\nAPI home: Example API\nIssue tracker: GitHub Issues\nChangelog: CHANGELOG.md",
+  "content_type": "bullet_list",
+  "metadata": { "document_metadata": { "source_type": "md" },
+                "section_heading": "6.1 Links and images", "section_level": 3 } }
+
+// long_single_paragraph — pdf/arxiv_1706.03762_attention.pdf, default
+{ "content": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks…",
+  "content_type": "long_single_paragraph",
+  "metadata": { "document_metadata": { "source_type": "pdf", "total_pages": 15 },
+                "section_heading": "Abstract", "section_level": 3 } }
+
+// row_document — excel/file_example_XLSX_50.xlsx, mode="row"
+{ "content": "0: 1 | First Name: Dulce | Last Name: Abril | Gender: Female | Country: United States | Age: 32 | Date: 15/10/2017 | Id: 1562",
+  "content_type": "row_document",
+  "metadata": { "sheet_name": "Sheet1", "sheet_index": 0, "row_index": 1,
+                "header_row": ["0","First Name","Last Name","Gender","Country","Age","Date","Id"],
+                "col_count": 8, "rows_per_chunk": 1, "actual_row_count": 1,
+                "chunk_index": 0, "skipped_sheets": [] } }
+
+// row_group — csv/plotly_iris.csv, mode="row" (3 rows per chunk, the default)
+{ "content": "sepal length: 5.1 | sepal width: 3.5 | petal length: 1.4 | petal width: 0.2 | class: Iris-setosa\nsepal length: 4.9 | …",
+  "content_type": "row_group",
+  "metadata": { "row_start": 1, "row_end": 3, "row_count": 3, "col_count": 5,
+                "header_row": ["sepal length","sepal width","petal length","petal width","class"],
+                "has_header": true, "delimiter_detected": ",", "encoding": "utf-8",
+                "chunk_index": 0 } }
+
+// semantic — md/test.md, mode="semantic"
+{ "content": "Project: temp-doc\nOwner: Platform Team\nDate: 2026-04-21\n\nJump to Metrics | Jump to Architecture | …",
+  "content_type": "semantic",
+  "metadata": { "avg_block_length": 89, "block_types": ["paragraph"], "chunk_index": 1,
+                "document_metadata": { "source_type": "md", "total_input_blocks": 90 },
+                "has_list": false, "heading_path": ["Complex Markdown Test Document"],
+                "keyword_density": 0.607, "merge_reasons": ["short_paragraph"],
+                "paragraph_count": 2, "primary_merge_reason": "short_paragraph",
+                "section_heading": "Complex Markdown Test Document", "section_level": 1 } }
+```
+
+## One real chunk per mode
+
+The metadata is where a mode actually shows itself. Same file, different mode:
+
+```json
+// mode="section" — pdf/arxiv_1706.03762_attention.pdf
+{ "content_type": "section",
+  "metadata": { "block_types": ["paragraph"], "char_count": 455, "chunk_index": 2,
+                "document_metadata": { "source_type": "pdf", "total_pages": 15 },
+                "heading_path": ["scholarly works."], "paragraph_count": 4,
+                "section_heading": "scholarly works.", "section_level": 2,
+                "split_part": null, "split_total": null } }
+
+// mode="sliding_window" — md/test.md  (window_size 3, overlap 1)
+{ "content_type": "sliding_window",
+  "metadata": { "block_count": 3, "chunk_index": 0, "window_index": 0,
+                "window_size": 3, "overlap": 1, "paragraph_range": [0, 2],
+                "document_metadata": { "source_type": "md", "total_input_blocks": 90 },
+                "heading_path": ["Complex Markdown Test Document"],
+                "section_heading": "Complex Markdown Test Document" } }
+
+// mode="sentence" — md/test.md  (sentences_per_chunk 3)
+{ "content_type": "sentence",
+  "metadata": { "sentences_per_chunk": 3, "actual_sentence_count": 2,
+                "source_paragraph_index": 1, "chunk_index": 1,
+                "heading_path": ["Complex Markdown Test Document"],
+                "section_heading": "Complex Markdown Test Document", "section_level": 1,
+                "document_metadata": { "source_type": "md", "total_input_blocks": 90 } } }
+
+// mode="page_aware" — docx/lists.docx  (a page that had to be split in two)
+{ "content_type": "page_aware",
+  "metadata": { "page_number": 5, "page_break_type": "estimated",
+                "paragraph_count": 15, "list_item_count": 3, "table_count": 0,
+                "headings": [{ "level": 1, "text": "5. Definition-Style List" },
+                              { "level": 1, "text": "6. Mixed Content with Lists" }],
+                "section_heading_level": 1,
+                "chunk_index": 1, "total_chunks": 2,
+                "document_metadata": { "source_type": "docx" } } }
+```
+
+`semantic` is above; `structural` is what `default` resolves to for prose
+formats, so its chunks look like the `heading` / `plain_paragraph` examples.
+Full per-mode behaviour lives in [Chunking Modes](/docs/chunking-modes).
+
+## Reading metadata
+
+`metadata` is a flat map of scalars, lists and one nested object. Two rules
+cover almost every mistake:
+
+1. **Read every key optionally.** No key is guaranteed by the contract — not
+   `page_number`, not `chunk_index`, not `section_heading`. Which keys exist is
+   a function of *format × mode*, and it is enumerated in the
+   [Metadata Reference](/docs/metadata-reference).
+2. **A key that exists can still be `null`.** `section_heading` is `null` for a
+   chunk before the first heading; `.doc` `page_number` is `null` when the file
+   declares no hard page breaks. `null` means "known to be absent", missing
+   means "this format/mode does not produce this at all".
+
+### document_metadata
+
+One nested object carries file-level provenance — the same for every chunk in
+the call. Its **shape depends entirely on the format**, so treat it as a union,
+not a struct:
+
+```json
+{ "source_type": "pdf",  "total_pages": 15 }
+{ "source_type": "md",   "total_input_blocks": 90 }
+{ "source_type": "docx", "header_text": null, "footer_text": null, "image_count": 2 }
+{ "source_type": "pptx", "total_slides": 48 }
+{ "source_type": "ipynb", "nbformat": "4.0", "kernel": null, "language": null,
+  "cell_count": 1, "code_cell_count": 1, "markdown_cell_count": 0 }
+{ "source_type": "epub", "title": "Minimal EPUB 3.0", "epub_version": "3.0",
+  "creator": null, "creators": [], "contributors": [], "publishers": [], "subjects": [],
+  "identifier": "NOID", "identifiers": ["NOID"], "language": "en", "languages": ["en"],
+  "spine_count": 1, "toc": [ … ] }
+{ "source_type": "eml",  "subject": "This is a test message", "from": "John X. Doe <bbb@ddd.com>",
+  "to": ["bbb@zzz.org"], "cc": [], "bcc": [], "date": "2001-05-04T14:05:44-04:00",
+  "message_id": "15090.61304.110929.45684@aaa.zzz.org", "in_reply_to": [], "references": [],
+  "has_attachments": false, "attachment_count": 0 }
+```
+
+Two absences are worth knowing: **`.doc` emits no `document_metadata` at all**,
+and **spreadsheets and CSV/TSV emit none either** — their provenance lives in
+per-chunk keys such as `sheet_name` and `encoding`. Note also that DOCX's
+`default` mode is the one format whose `document_metadata` has **no
+`source_type`**.
+
+## Image chunks
+
+`content_type: "image"` covers **two different objects**. Confusing them is the
+most common image bug.
+
+**1. The structural placeholder** — plain `default` / `structural`, no
+`list_images`. The chunk's `content` is the *paragraph text* with an inline
+`[Image: …]` marker, and there is **no `image_name`**. It tells you an image sits
+here; it does not give you one.
+
+```json
+// docx/corpus_floating_image.docx, mode="default", list_images off
+{ "content": "A floating image is anchored to this paragraph.\n[Image: Float 1]",
+  "content_type": "image",
+  "metadata": { "page_number": 1, "section_heading": null, "section_heading_level": null,
+                "footnotes": [], "endnotes": [],
+                "document_metadata": { "header_text": null, "footer_text": null, "image_count": 2 } } }
+```
+
+**2. The extraction chunk** — with `list_images` on. Its **`content` is the image
+filename**, not bytes and not text. The bytes live in the result's images
+container under that same name.
+
+```json
+// docx/all_round.docx, list_images=True  → chunks[4]
+{ "content": "69400fb8a9cb4130.gif",
+  "content_type": "image",
+  "metadata": { "image_name": "69400fb8a9cb4130.gif", "alt_text": "" } }
+
+// pdf/arxiv_1706.03762_attention.pdf, list_images=True → chunks[0]
+{ "content": "image_p3_1.png",
+  "content_type": "image",
+  "metadata": { "image_name": "image_p3_1.png" } }
+```
+
+Turning `list_images` on **replaces** the placeholders with extraction chunks;
+the two never coexist.
+
+### What an image chunk carries
+
+Deliberately minimal, and *not* uniform:
+
+| Format | Image-chunk metadata |
+| --- | --- |
+| DOCX | `image_name`, `alt_text` — nothing else |
+| PDF | `image_name` — nothing else |
+| XLSX family | `image_name`, `alt_text`, `sheet_name`, `sheet_index` |
+| PPTX family | `image_name`, `alt_text`, `slide_number`, `document_metadata` |
+| HTML | `image_name`, `alt_text`, `document_metadata` |
+| EPUB | `image_name`, `href` |
+| DOC / PPT | `image_name` plus that format's full structural block (`source`, `chunk_index`, `total_chunks`, `paragraph_type: "image"`, `page_number`) |
+| IPYNB, EML/MBOX/MSG, ODT/ODP | `image_name` only |
+
+### Names
+
+Most formats name an image by a **content hash** — `"<16 hex>.<ext>"`, FNV-1a
+64-bit over the bytes, pinned in the engine so Python, JavaScript and Rust all
+produce the same string. Identical bytes collapse to one entry: the HTML fixture
+`sample_with_image.html` emits two image chunks that share
+`2668ca08e54e28cc.png` with different `alt_text`, and one entry in `images`.
+
+Two families do **not** hash:
+
+- **PDF names positionally**: `image_p{page}_{n}.{ext}` — `image_p3_1.png`,
+  `image_p4_1.png`, `image_p4_2.png`. Always re-encoded to `.png`.
+- **EPUB, IPYNB and the email formats keep the source name**:
+  `7433694763631080598_cover.jpg` (the EPUB manifest basename),
+  `output_image_1.png` (a notebook cell output), `msg1_image_1.gif` (message 1
+  of an mbox), `testPNG.png` (an `.eml` attachment).
+
+<Callout type="info">
+  Only web-renderable rasters are extracted (`.png` `.jpg` `.jpeg` `.gif`
+  `.webp`); `.emf` / `.wmf` / `.tiff` payloads are skipped silently. A format
+  with no image support still returns a result object — with an empty images
+  container, never an error. See
+  [Supported Formats](/docs/supported-formats#image-extraction).
+</Callout>
+
+`get_markdown(..., list_images=True)` mirrors all of this, returning
+`markdown` (with `![](name.ext)` references) and the same images container.
+
+## Next
+
+- [Metadata Reference](/docs/metadata-reference) — the exact keys per format and mode.
+- [Chunking Modes](/docs/chunking-modes) — what each mode does and when to pick it.
+- [Supported Formats](/docs/supported-formats) — all 36 extensions and their image support.
+- [Error Handling](/docs/error-handling) — what happens when a file will not parse.

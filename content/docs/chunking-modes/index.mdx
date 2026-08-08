@@ -1,6 +1,6 @@
 ---
 title: Chunking Modes
-description: Seven document modes plus dedicated spreadsheet modes — how to pick the right one.
+description: Seven document modes plus dedicated spreadsheet modes — what each one emits, which parameter it reads, and how to pick.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -8,31 +8,42 @@ import { Callout } from "fumadocs-ui/components/callout";
 The `mode` argument controls how a document is segmented. Document formats
 support **seven** modes; spreadsheet and delimited formats have their own set.
 
+<LangSelect />
+
 ## Document modes
 
 | Mode | What it does |
 | --- | --- |
-| [`default`](/docs/chunking-modes/structural) | Element-level chunks (per format; DOCX normalizes to `structural`). |
+| [`default`](/docs/chunking-modes/structural) | Each format's natural element-level strategy (DOCX normalizes to `structural`). |
 | [`structural`](/docs/chunking-modes/structural) | One chunk per paragraph / heading / table / list. |
-| [`section`](/docs/chunking-modes/section) | All content under a heading grouped into one chunk. |
-| [`semantic`](/docs/chunking-modes/semantic) | Semantically coherent passages grouped together. |
+| [`section`](/docs/chunking-modes/section) | Content under a heading grouped into one chunk. |
+| [`semantic`](/docs/chunking-modes/semantic) | Adjacent blocks merged while an eleven-signal ladder says they're the same idea. |
 | [`sliding_window`](/docs/chunking-modes/sliding-window) | Overlapping windows for dense retrieval. |
 | [`sentence`](/docs/chunking-modes/sentence) | A fixed number of sentences per chunk. |
-| [`page_aware`](/docs/chunking-modes/page-aware) | Preserves the document's page (or slide) layout. |
+| [`page_aware`](/docs/chunking-modes/page-aware) | Chunks aligned to the document's pages or slides. |
 
-Applies to DOCX, DOC, PDF, PPTX, PPT, Markdown, HTML, TXT, MSG, EML/MBOX,
-ODT/ODP, JSON, RTF, EPUB, and IPYNB.
+Applies to DOCX (+ DOCM/DOTX/DOTM), DOC, PDF, PPTX (+ POTX/POTM/PPSX/PPSM),
+PPT, Markdown, HTML, TXT, MSG, EML/MBOX, ODT/ODP, JSON/JSONL/NDJSON, RTF, EPUB,
+and IPYNB.
+
+<Callout type="warn" title="A mode never gives you only its own content_type">
+  `mode="section"` does not mean every chunk is `content_type: "section"`. Most
+  formats keep headings, tables and code blocks as their own typed chunks
+  alongside the mode's chunks, and the exact set differs per format. Each mode
+  page below states the set it really emits — read it before you write
+  `if chunk.content_type == mode`.
+</Callout>
 
 ## Pick your mode
 
 | I want to… | Best mode |
 | --- | --- |
 | Index every paragraph and heading individually | `default` / `structural` |
-| Keep all content under a heading in one chunk | `section` |
+| Keep the body under a heading in one chunk | `section` |
 | Feed coherent passages to an LLM or embedding model | `semantic` |
 | Enforce a fixed sentence count per chunk | `sentence` |
 | Build overlapping chunks for dense retrieval | `sliding_window` |
-| Preserve page layout for page-referenced citations | `page_aware` |
+| Cite a real page or slide number | `page_aware` (on a format that has pages — [see the table](/docs/chunking-modes/page-aware#which-formats-have-real-pages)) |
 
 <Callout title="Default recommendation">
   Start with **`semantic`** when feeding an LLM and **`section`** when building a
@@ -42,46 +53,86 @@ ODT/ODP, JSON, RTF, EPUB, and IPYNB.
 
 ## Mode parameters
 
-| Parameter | Default | Applies to |
+These are the four knobs the source-agnostic entry points (`get_chunks` /
+`getChunks` / `chunks_rs::get_chunks`) accept.
+
+| Parameter | Default | Read by |
 | --- | --- | --- |
 | `window_size` | `3` | `sliding_window` (must be &gt; 0) |
 | `overlap` | `1` | `sliding_window` (must be &lt; `window_size`) |
-| `sentences_per_chunk` | `3` | `sentence` (must be &gt; 0) |
-| `paragraphs_per_page` | `15` | `page_aware` (PPTX defaults to `5`, meaning slides per chunk) |
+| `sentences_per_chunk` | `3` | `sentence` — **and** spreadsheets/CSV in `row` mode, see below |
+| `paragraphs_per_page` | `15` | `page_aware` — units per page for formats with no page breaks; **slides per chunk** for PPTX; **rows per chunk** for CSV/TSV |
 
 ## Spreadsheet & delimited modes
 
-Spreadsheets (XLSX / XLS / XLSM / XLSB / ODS / XLTX / XLTM) support six modes —
-`row`, `table`, `sheet`, `sliding_window`, `page_aware`, `semantic` — and CSV /
-TSV support three: `row` (default), `sliding_window`, `page_aware`.
+Spreadsheets (XLSX / XLS / XLSM / XLSB / ODS / XLTX / XLTM) support six modes;
+CSV / TSV support three (plus `default`, an alias for `row`). Passing an
+unsupported mode raises immediately, and the engine names the set it accepts:
 
-| Mode | What it does |
-| --- | --- |
-| `row` | N data rows per chunk (`content_type` `row_document` / `row_group`). |
-| `table` | One chunk per detected table region (XLSX/XLS only). |
-| `sheet` | One chunk per worksheet. |
-| `sliding_window` | Overlapping row windows (`row_window`). |
-| `page_aware` | Rows grouped into page-sized chunks (`sheet_region`). |
-| `semantic` | Semantically grouped rows (`semantic_group`). |
+```
+mode must be one of [page_aware, row, semantic, sheet, sliding_window, table] for XLSX, got: 'nope'
+mode must be 'row', 'default', 'sliding_window', or 'page_aware' for CSV
+```
 
-### Spreadsheet & delimited parameters
+| Mode | Spreadsheets | CSV / TSV | `content_type` emitted |
+| --- | --- | --- | --- |
+| `row` (= `default`) | yes | yes | `row_document` (spreadsheet) / `row_group` (CSV) |
+| `table` | yes | — | `table_region` |
+| `sheet` | yes | — | `sheet` |
+| `sliding_window` | yes | yes | `row_window` |
+| `page_aware` | yes | yes | `sheet_region` (spreadsheet) / `row_group` (CSV) |
+| `semantic` | yes | — | `semantic_group` |
+
+`table` is **not** XLSX-only: it works for every extension in the spreadsheet
+family — `.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`, `.xltx`, `.xltm` — all
+routed through the same calamine-backed chunker.
+
+### Rows per chunk through the unified entry point
+
+There is no `rows_per_chunk` argument on `get_chunks`. The row count is derived
+from the two document parameters, and the derivation is **not** the same for
+spreadsheets and CSV:
+
+| Format | `row` mode rows per chunk | `page_aware` rows per chunk |
+| --- | --- | --- |
+| CSV / TSV | `max(sentences_per_chunk, 1)` → **3** at defaults | `paragraphs_per_page` → **15** at defaults |
+| XLSX family | `sentences_per_chunk`, except `3` → `1` (see below) → **1** at defaults | whole-sheet regions capped at 2,000 chars |
+
+<Callout type="warn" title="`sentences_per_chunk == 3` is a sentinel for spreadsheets">
+  For the spreadsheet extensions the value `3` — the API's own *default* — is
+  read as "the caller did not ask" and mapped to `rows_per_chunk = 1`. Every
+  other value passes through unchanged. The consequence: **a deliberate
+  `sentences_per_chunk=3` is unreachable through `get_chunks` for a
+  spreadsheet.** You will get 1 row per chunk, not 3. If you genuinely want 3
+  rows per chunk, call the format-specific chunker (`chunk_xlsx` in Python,
+  `chunks_rs::formats::xlsx::chunk_with_options` in Rust) and set
+  `rows_per_chunk` directly.
+
+  CSV has no sentinel: `sentences_per_chunk=3` really does mean 3 rows there.
+</Callout>
+
+<Callout type="info" title="Where the “10” comes from">
+  You may have seen `rows_per_chunk = 10` documented as the CSV default. That is
+  the default of the **format-specific** `chunk_csv()` helper (and of
+  `ChunkOptions::default()` in Rust) — it is not what the unified entry point
+  uses. Through `get_chunks` / `getChunks`, CSV rows-per-chunk defaults to
+  **3**.
+</Callout>
+
+### Other spreadsheet & delimited parameters
+
+Reachable only through the format-specific chunkers, not `get_chunks`:
 
 | Parameter | Default | Notes |
 | --- | --- | --- |
-| `rows_per_chunk` | `1` (XLSX) / `10` (CSV) | Rows per `row` chunk. |
-| `max_chunk_chars` | `2000` | Cap for `table` / `sheet` / `page_aware` chunks (XLSX). |
+| `rows_per_chunk` | `10` (`chunk_csv` / `ChunkOptions`) | Rows per `row` chunk. |
+| `max_chunk_chars` | `2000` | Cap for `table` / `sheet` / `page_aware` chunks (spreadsheets). |
 | `include_headers` | `true` | Repeat the header row in each chunk. |
-| `sheet_names` | all | Restrict to specific worksheets (XLSX). |
+| `sheet_names` | all | Restrict to specific worksheets. |
 | `skip_empty_rows` | `true` | Drop blank rows. |
-| `serialize_as` | `key_value` | How a row is rendered (XLSX). |
-| `delimiter` | auto | `,` `\t` `;` `\|` (CSV/TSV). |
+| `serialize_as` | `key_value` | How a row is rendered (spreadsheets). |
+| `delimiter` | auto-detected | `,` `\t` `;` `\|` (CSV/TSV). |
 | `encoding` | `utf-8` | `utf-8` / `utf-8-bom` / `latin-1` / `windows-1252` (CSV). |
 
-<Callout type="info">
-  Through the unified `get_chunks` / `getChunks`, spreadsheets use `row` when you
-  pass the default mode, and rows-per-chunk is derived from `sentences_per_chunk`
-  / `sentencesPerChunk`. For direct control of `rows_per_chunk`, `delimiter`,
-  `max_chunk_chars`, or `sheet_names`, call the format-specific chunker
-  (`chunk_xlsx` / `chunk_csv` in Python, `chunks_rs::formats::{xlsx,csv}` in Rust)
-  — see the [API Reference](/docs/api-reference).
-</Callout>
+See the [API Reference](/docs/api-reference) for the full signatures, and
+[Metadata Reference](/docs/metadata-reference) for the keys each mode writes.

@@ -40,7 +40,9 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex shrink-0 items-center gap-1">
-          <LanguageSwitcher className="mr-1 hidden lg:inline-flex" />
+          {/* md, not lg: below md the mobile menu carries the switcher, so
+              gating at lg left it unreachable in the md–lg band. */}
+          <LanguageSwitcher className="mr-1 hidden md:inline-flex" />
           <Button asChild variant="ghost" size="icon" className="hidden sm:inline-flex">
             <a href={site.links.github} target="_blank" rel="noreferrer" aria-label="GitHub repository">
               <GitHubIcon className="size-4" />

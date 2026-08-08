@@ -1,28 +1,82 @@
 ---
 title: sentence
-description: A fixed number of sentences per chunk for tight token budgets.
+description: A fixed number of sentences per chunk — for the blocks that are made of sentences.
 ---
 
-`sentence` produces chunks of a fixed number of sentences. When you have a tight
-token budget and want predictable chunk sizes, this mode gives you consistent,
-sentence-aligned boundaries.
+import { Callout } from "fumadocs-ui/components/callout";
 
-```python
-from py_chunks import get_chunks
+`sentence` splits prose into groups of `sentences_per_chunk` sentences. When you
+have a tight token budget and want predictable chunk sizes, this gives you
+consistent, sentence-aligned boundaries.
 
-chunks = get_chunks("article.docx", mode="sentence", sentences_per_chunk=3)
-```
+<LangSelect />
+
+## Real input → real output
+
+<LangCode id="modeSentence" />
+
+Note the last group: a four-sentence paragraph at `sentences_per_chunk=3`
+produces a chunk of 3 and a chunk of 1. Groups never span a block, so a short
+tail is normal.
+
+<Callout type="warn" title="Most chunks in this mode are not sentences">
+  `sentence` mode does **not** turn the whole document into sentence groups. In
+  the markdown-family formats it splits *paragraphs* and leaves every other kind
+  of block alone: headings, tables, code blocks and **lists** pass through as
+  their own typed chunks.
+
+  Lists are deliberately not split — cutting a bullet list at "three sentences"
+  produces fragments that mean nothing. A `bullet_list` chunk in this mode
+  carries `actual_sentence_count: 0`, which is the tell: it was never sentence-split.
+</Callout>
+
+## What it emits
+
+| Format | `content_type` values emitted |
+| --- | --- |
+| Markdown, HTML, TXT, PDF, EPUB, RTF, EML/MBOX, MSG, ODT, ODP, JSON | `sentence`, plus `heading`, `bullet_list`, `code_block` and `table` wherever the document has them |
+| IPYNB | `code_block` for code cells; `heading` / `bullet_list` / `sentence` for markdown cells |
+| DOCX, DOC, PPTX family, PPT | `sentence` only |
+| Spreadsheets, CSV/TSV | not supported |
+
+Measured: `code_heavy.md` → 13 `sentence` + 22 `heading` + 17 `code_block` +
+2 `table`; `_stress_big_list.md` → 63 `bullet_list` + 1 `sentence` +
+1 `heading`; `all_round.docx` → 11 `sentence` and nothing else.
+
+If your pipeline assumes `content_type == "sentence"`, a list-heavy Markdown
+document will silently drop almost all of its content.
+
+## Units and formats
+
+| Family | What gets sentence-split |
+| --- | --- |
+| Markdown-family | paragraph blocks only. Headings, lists, tables and code blocks pass through untouched. |
+| DOCX, DOC | every paragraph |
+| PPTX, PPT | all slide text, split across slides |
+| Spreadsheets, CSV/TSV | not supported |
 
 ## Parameters
 
 | Parameter | Default | Notes |
 | --- | --- | --- |
-| `sentences_per_chunk` | `3` | Sentences per chunk. Must be greater than 0. |
+| `sentences_per_chunk` | `3` | Sentences per group. Must be &gt; 0, or `sentences_per_chunk must be greater than 0` is raised. |
 
-## content_type
+<Callout type="info" title="The same argument means something else for spreadsheets">
+  `sentences_per_chunk` is also what the unified entry point uses to derive
+  rows-per-chunk for spreadsheets and CSV — including a sentinel that makes a
+  deliberate `3` unreachable. See
+  [Chunking Modes → rows per chunk](/docs/chunking-modes#rows-per-chunk-through-the-unified-entry-point).
+</Callout>
 
-Chunks carry the `content_type` `sentence`. Metadata typically records the
-actual sentence count per chunk (the last chunk may hold fewer).
+## Metadata
+
+`sentence` chunks carry `actual_sentence_count` (the number this chunk really
+holds — the last group of a block is often short), `sentences_per_chunk` (what
+you asked for), `source_paragraph_index`, `heading_path`, `section_heading`,
+`section_level` and `chunk_index`. Pass-through chunks (`heading`, `table`,
+`code_block`) omit the sentence keys entirely; `bullet_list` chunks keep them
+with `actual_sentence_count: 0`. Full listing in the
+[Metadata Reference](/docs/metadata-reference).
 
 ## When to use it
 

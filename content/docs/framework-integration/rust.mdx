@@ -11,13 +11,136 @@ sentences_per_chunk, paragraphs_per_page)`. The import name is `chunks_rs`; ever
 chunk is `Chunk { content, content_type, metadata }` where `metadata` is a
 `serde_json::Value`.
 
-<Callout type="info" title="Handlers are illustrative">
-  Error handling is unwrapped for brevity — return a `Result` / proper status in
-  production. `filename` only needs the correct extension so the engine can
-  dispatch.
+<Callout type="info" title="One handler does it properly, the rest are terse">
+  The Axum handler below maps every `ChunkError` variant onto an HTTP status.
+  The Actix / Rocket / Warp handlers use `.unwrap()` for brevity — copy the Axum
+  error type into them for production. `filename` only needs the correct
+  extension so the engine can dispatch.
 </Callout>
 
-## Axum
+## Axum — with real error mapping
+
+`ChunkError` is `#[non_exhaustive]`, so a `match` on it needs a wildcard arm;
+that arm is also where a future engine variant lands, which is why it returns
+500 rather than guessing.
+
+```rust
+use axum::{
+    extract::Multipart,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
+use chunks_rs::{get_chunks_from_bytes, ChunkError};
+use serde_json::json;
+
+/// Newtype so we can implement `IntoResponse` for the engine's error.
+struct ApiError(ChunkError);
+
+impl From<ChunkError> for ApiError {
+    fn from(e: ChunkError) -> Self {
+        ApiError(e)
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, kind) = match &self.0 {
+            ChunkError::Unsupported(_) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported"), // 415
+            ChunkError::InvalidArg(_) => (StatusCode::BAD_REQUEST, "invalid-arg"),             // 400
+            ChunkError::Parse(_) => (StatusCode::UNPROCESSABLE_ENTITY, "parse"),               // 422
+            ChunkError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, "io"),                    // 500
+            // #[non_exhaustive]: a variant added by a future engine version.
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, "unknown"),
+        };
+        // `Display` for ChunkError prefixes the variant ("parse error: …");
+        // strip it if you want the bare engine message.
+        (status, Json(json!({ "error": self.0.to_string(), "kind": kind }))).into_response()
+    }
+}
+
+async fn chunk(mut multipart: Multipart) -> Result<Response, ApiError> {
+    let Ok(Some(field)) = multipart.next_field().await else {
+        return Ok((StatusCode::BAD_REQUEST, "no multipart field").into_response());
+    };
+    let filename = field.file_name().unwrap_or("upload").to_string();
+    let Ok(data) = field.bytes().await else {
+        return Ok((StatusCode::BAD_REQUEST, "could not read body").into_response());
+    };
+
+    // `?` converts ChunkError -> ApiError -> Response via the impls above.
+    let chunks = get_chunks_from_bytes(&data, &filename, "semantic", 3, 1, 3, 15)?;
+    Ok(Json(json!({ "count": chunks.len() })).into_response())
+}
+```
+
+| Variant | Status | Meaning to the caller |
+| --- | --- | --- |
+| `Unsupported` | **415** Unsupported Media Type | The extension isn't handled. Retrying won't help. |
+| `InvalidArg` | **400** Bad Request | A mode or parameter was wrong. Fix the request. |
+| `Parse` | **422** Unprocessable Entity | The file is a supported type but could not be read. |
+| `Io` | **500** | A filesystem failure on the server's side. |
+| *wildcard* | **500** | A variant this build doesn't know about. |
+
+<Callout type="info" title="Adversarial input can't crash the handler">
+  Every public entry point in `chunks_rs` runs the parse behind a `catch_unwind`
+  boundary, so a panic inside a third-party parser becomes
+  `ChunkError::Parse("internal parser panic: …")` — a 422 above — instead of
+  unwinding into your Axum worker.
+</Callout>
+
+## Axum — streaming NDJSON
+
+Streaming is **per-format** in Rust; there is no `chunks_rs::stream` to match
+`get_chunks`. Pick the module for the format you're serving. Below is PDF, where
+`default` mode is the one genuinely incremental path for a *document* format —
+CSV and XLSX (`row` / `sliding_window`) are incremental too. See the
+[streaming matrix](/docs/streaming).
+
+```rust
+use axum::{
+    body::Body,
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
+};
+use chunks_rs::formats::pdf;
+use futures_util::stream;
+
+async fn chunk_pdf_stream() -> Response {
+    // `stream(...)` takes the same arguments as `chunk(...)` and returns a
+    // native Iterator<Item = Result<Chunk>>. In "default" mode a chunk costs
+    // only the pages it came from; the other six modes parse behind the
+    // iterator on a worker thread.
+    let iter = match pdf::stream("/srv/uploads/report.pdf", "default", 3, 1, 3, 15) {
+        Ok(it) => it,
+        Err(e) => return (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()).into_response(),
+    };
+
+    // `Chunk` derives Serialize and serialises to the same
+    // {content, content_type, metadata} JSON the other two SDKs emit.
+    let body = Body::from_stream(stream::iter(iter.map(|item| {
+        item.map(|c| {
+            let mut line = serde_json::to_vec(&c).unwrap_or_default();
+            line.push(b'\n');
+            line
+        })
+        .map_err(std::io::Error::other)
+    })));
+
+    ([(header::CONTENT_TYPE, "application/x-ndjson")], body).into_response()
+}
+```
+
+<Callout type="warn" title="Don't block the async executor">
+  `pdf::stream` is a **blocking** iterator. Serving it straight from an async
+  handler as above is fine for a low-traffic endpoint, but under load move the
+  iteration onto `tokio::task::spawn_blocking` and feed an
+  `mpsc::channel` that the response body reads from. Which formats actually
+  benefit from streaming at all is in [Streaming](/docs/streaming) — for most of
+  them the parse has already completed by the time the first chunk arrives.
+</Callout>
+
+## Axum — minimal
 
 ```rust
 use axum::{extract::Multipart, Json};
@@ -114,9 +237,42 @@ let chunk = warp::post()
     });
 ```
 
+## `ChunkOptions` — the knobs dispatch doesn't have
+
+`chunks_rs::get_chunks` takes six positional arguments and nothing else. It has
+no `rows_per_chunk`, no `delimiter`, no `encoding`, no `sheet_names`. Those live
+on `ChunkOptions`, which the **per-format** `chunk_with_options` entry points
+take:
+
+```rust
+use chunks_rs::{formats::csv, ChunkMode, ChunkOptions};
+
+let opts = ChunkOptions {
+    mode: ChunkMode::Row,
+    rows_per_chunk: 25,          // unreachable through get_chunks
+    delimiter: Some(b';'),       // ditto
+    encoding: "windows-1252".into(),
+    include_headers: true,
+    skip_empty_rows: true,
+    ..ChunkOptions::default()    // window_size 3, overlap 1,
+                                 // sentences_per_chunk 3, paragraphs_per_page 15
+};
+
+let chunks = csv::chunk_with_options("export.csv", &opts)?;
+```
+
+`ChunkOptions::default()` mirrors the Python API's keyword defaults, with one
+trap worth knowing: its `rows_per_chunk` is **10**, whereas routing a CSV
+through `get_chunks` derives 3 from `sentences_per_chunk` instead. See
+[Chunking Modes](/docs/chunking-modes#rows-per-chunk-through-the-unified-entry-point).
+
+`ChunkOptions::new(mode)` and `.with_window(size, overlap)` are builder-style
+shortcuts.
+
 <Callout type="info" title="Per-format entry points">
   For a single known format you can skip source detection and call the family
   module directly — e.g. `chunks_rs::formats::docx::chunk_from_bytes(...)`. Each
-  `chunks_rs::formats::*` module also exposes `stream(...)`, `to_markdown`, and
-  (where applicable) `*_with_images`. See the [API Reference](/docs/api-reference#rust--rs-chunks).
+  `chunks_rs::formats::*` module also exposes `chunk_with_options(...)`,
+  `stream(...)`, `to_markdown`, and (where applicable) `*_with_images`. See the
+  [Rust API reference](/docs/api-reference/rust#the-per-format-facade).
 </Callout>

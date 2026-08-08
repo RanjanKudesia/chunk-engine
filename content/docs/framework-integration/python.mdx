@@ -137,6 +137,13 @@ def process_document(file_path: str):
     return len(chunks)
 ```
 
+For the "embed + persist" half, see the
+[pgvector ingestion recipe](/docs/recipes#3-ingest-into-a-real-vector-database)
+— it keys on `(source, chunk_index)` and upserts, which is what makes a task
+retry safe. If documents change over time, the
+[incremental re-indexing recipe](/docs/recipes#6-incremental-re-indexing) turns
+this task into "re-embed only what moved".
+
 <Callout type="warn" title="Async uploads">
   If an upload object's `read()` is a coroutine (some ASGI stacks),
   `get_chunks_from_upload` raises `TypeError`. Read the bytes yourself and use

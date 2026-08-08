@@ -1,25 +1,30 @@
 ---
 title: structural (default)
-description: Element-level chunks — one per paragraph, heading, table, or list.
+description: Element-level chunks — one per paragraph, heading, table, list or code block.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-`structural` produces one chunk per structural element: each heading, paragraph,
-table, and list becomes its own chunk. It's the finest-grained mode and the best
-choice when you want element-level control over indexing.
+`structural` produces one chunk per structural element: each heading,
+paragraph, table, list and code block becomes its own chunk. It is the
+finest-grained mode and the best choice when you want element-level control
+over indexing.
 
-```python
-from py_chunks import get_chunks
+<LangSelect />
 
-chunks = get_chunks("report.docx", mode="structural")
-```
+## Real input → real output
+
+<LangCode id="modeStructural" />
 
 ## `default` vs `structural`
 
-For most formats, `default` is element-level chunking.
+For most formats, `default` is element-level chunking and the two are the same
+pipeline.
 
 - **DOCX**: `default` is normalized to `structural` — they're equivalent.
+- **Spreadsheets / CSV**: `default` maps to `row`, and `structural` is not a
+  valid mode at all (`mode must be one of [page_aware, row, semantic, sheet,
+  sliding_window, table] for XLSX`).
 - **PDF**: `default` and `structural` are **not** the same, and the difference
   is heading classification — the text is identical either way.
   - `default` ranks type sizes **within each page**. No pass over the document,
@@ -32,17 +37,51 @@ For most formats, `default` is element-level chunking.
   Neither is strictly better. Per-page ranking finds a title that appears once
   in a long paper (which document-wide ranking discards as too rare to be
   structure); document-wide ranking gives levels that mean the same thing on
-  every page.
+  every page. On `arxiv_1301.3781_word2vec.pdf` the split is visible in the
+  counts: `default` yields 11 `heading` chunks and 2
+  `short_disconnected_paragraph`, `structural` yields 10 and 3.
 
 <Callout type="info">
   If you're unsure, `default` is a safe starting point for every format.
 </Callout>
 
-## content_type values
+## Units and formats
 
-Chunks are typed by what they contain — common values include `heading`,
-`plain_paragraph`, `bullet_list`, `table`, and `code_block`. See the full list
-in the [Output Schema](/docs/output-schema).
+| Family | One chunk per |
+| --- | --- |
+| Markdown, HTML, TXT, PDF, EPUB, RTF, EML/MBOX, MSG, ODT, ODP, JSON, IPYNB | markdown block — heading, paragraph, list, table or code block |
+| DOCX, DOC | paragraph / table (DOCX groups short runs into `mixed_content`) |
+| PPTX, PPT | slide, with short-slide merging |
+| Spreadsheets | not a valid mode — use `row` |
+| CSV / TSV | not a valid mode — use `row` |
+
+## What it emits
+
+This mode is typed by *what each chunk contains*, so the set is the widest of
+any mode:
+
+`heading` · `plain_paragraph` · `long_single_paragraph` ·
+`short_disconnected_paragraph` · `bullet_list` · `table` · `code_block` ·
+`mixed_content` (DOCX)
+
+Measured: `code_heavy.md` → 22 `heading` + 17 `code_block` +
+13 `short_disconnected_paragraph` + 2 `table`; `all_round.docx` →
+8 `mixed_content` + 2 `table` + 1 `heading`; `arxiv_1301.3781_word2vec.pdf` →
+24 `plain_paragraph` + 19 `long_single_paragraph` + 10 `heading` + 10 `table` +
+3 `short_disconnected_paragraph`.
+
+The full content-type list, with a real example of each, is in the
+[Output Schema](/docs/output-schema).
+
+## Parameters
+
+`structural` and `default` read none of the four mode parameters.
+
+## Metadata
+
+Element chunks carry `section_heading`, `section_level` and `document_metadata`
+at minimum; DOCX adds page and list information, PDF adds `total_pages`. Full
+listing in the [Metadata Reference](/docs/metadata-reference).
 
 ## When to use it
 
